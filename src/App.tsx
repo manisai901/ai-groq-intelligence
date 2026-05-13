@@ -335,48 +335,48 @@ export default function App() {
             </div>
         </nav>
 
-        <div className="p-8 space-y-4">
-          <div className="p-6 glass-premium rounded-[2.5rem] border border-white/5 space-y-7 relative overflow-hidden group">
+        <div className="p-8 space-y-3.5">
+          <div className="p-5 glass-premium rounded-[2rem] border border-white/5 space-y-6 relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
             <div className="relative z-10">
-              <p className="text-[10px] uppercase tracking-[0.3em] text-indigo-400/60 font-black mb-8 flex items-center gap-2">
+              <p className="text-[9px] uppercase tracking-[0.3em] text-indigo-400/60 font-black mb-5 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
                 Network Intelligence
               </p>
               
-              <div className="grid gap-5">
-                <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-                      <Users className="w-6 h-6 text-indigo-400" />
+              <div className="grid gap-3.5">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-indigo-400" />
                     </div>
                     <div>
-                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Total Entities</p>
-                      <p className="text-lg font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
+                      <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider">Total Entities</p>
+                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                      <Activity className="w-6 h-6 text-violet-400" />
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                      <Activity className="w-5 h-5 text-violet-400" />
                     </div>
                     <div>
-                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Active Threads</p>
-                      <p className="text-lg font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
+                      <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider">Active Threads</p>
+                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                      <Eye className="w-6 h-6 text-emerald-400" />
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                      <Eye className="w-5 h-5 text-emerald-400" />
                     </div>
                     <div>
-                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Total Synapses</p>
-                      <p className="text-lg font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
+                      <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider">Total Synapses</p>
+                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -386,15 +386,15 @@ export default function App() {
 
           <button 
             onClick={() => setMessages([])}
-            className="w-full p-6 glass-premium rounded-[2.5rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
+            className="w-full p-5 glass-premium rounded-[2rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
           >
-            <div className="flex items-center gap-4">
-              <div className="p-4 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
-                <History className="w-6 h-6 text-indigo-400" />
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
+                <History className="w-5 h-5 text-indigo-400" />
               </div>
               <div className="text-left">
-                <p className="text-[10px] uppercase tracking-[0.25em] text-white/30 font-bold mb-1">Session</p>
-                <p className="text-sm font-bold text-white/60">Clear Workspace</p>
+                <p className="text-[9px] uppercase tracking-[0.25em] text-white/30 font-bold mb-1">Session</p>
+                <p className="text-xs font-bold text-white/60">Clear Workspace</p>
               </div>
             </div>
           </button>
