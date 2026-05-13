@@ -27,7 +27,9 @@ import {
   MicOff,
   Users,
   Eye,
-  Activity
+  Activity,
+  Cpu,
+  Network
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from './lib/utils';
@@ -289,6 +291,7 @@ export default function App() {
 
   return (
     <div className="relative flex h-screen w-full bg-[#030303] overflow-hidden font-sans text-[#F0F0F0] selection:bg-violet-500/30">
+      <LogoDef />
       <div className="stardust-overlay" />
       
       {/* Mani AI Dynamic Background Blobs */}
@@ -317,16 +320,7 @@ export default function App() {
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-8 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-600 to-indigo-700 flex items-center justify-center shrink-0 shadow-2xl shadow-indigo-500/40 group cursor-pointer relative overflow-hidden">
-              <Sparkles className="w-6 h-6 text-white relative z-10 group-hover:rotate-12 transition-transform" />
-              <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-[Verdana] text-2xl font-bold tracking-tighter bg-gradient-to-r from-white to-white/40 bg-clip-text text-transparent italic no-underline">Mani AI</span>
-              <span className="text-[9px] font-bold tracking-[0.3em] text-indigo-400 uppercase opacity-50">Enterprise</span>
-            </div>
-          </div>
+          <Logo onClick={() => setSidebarOpen(false)} />
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-2 text-white/40 hover:text-white transition-colors">
             <X className="w-6 h-6" />
           </button>
@@ -339,48 +333,48 @@ export default function App() {
             </div>
         </nav>
 
-        <div className="p-8 space-y-4">
-          <div className="p-6 glass-premium rounded-[2rem] border border-white/5 space-y-6 relative overflow-hidden group">
+        <div className="p-8 space-y-3">
+          <div className="p-5 glass-premium rounded-[1.8rem] border border-white/5 space-y-5 relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
             <div className="relative z-10">
-              <p className="text-[10px] uppercase tracking-[0.3em] text-indigo-400/60 font-black mb-6 flex items-center gap-2">
+              <p className="text-[9px] uppercase tracking-[0.25em] text-indigo-400/50 font-black mb-4 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
                 Network Intelligence
               </p>
               
-              <div className="grid gap-5">
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-                      <Users className="w-5 h-5 text-indigo-400" />
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.01] border border-white/5 hover:bg-white/[0.03] transition-all">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                      <Users className="w-4 h-4 text-indigo-400" />
                     </div>
                     <div>
-                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Total Entities</p>
-                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
+                      <p className="text-[9px] text-white/30 font-bold uppercase tracking-wider">Total Entities</p>
+                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                      <Activity className="w-5 h-5 text-violet-400" />
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.01] border border-white/5 hover:bg-white/[0.03] transition-all">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                      <Activity className="w-4 h-4 text-violet-400" />
                     </div>
                     <div>
-                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Active Threads</p>
-                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
+                      <p className="text-[9px] text-white/30 font-bold uppercase tracking-wider">Active Threads</p>
+                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                      <Eye className="w-5 h-5 text-emerald-400" />
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.01] border border-white/5 hover:bg-white/[0.03] transition-all">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                      <Eye className="w-4 h-4 text-emerald-400" />
                     </div>
                     <div>
-                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Total Synapses</p>
-                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
+                      <p className="text-[9px] text-white/30 font-bold uppercase tracking-wider">Total Synapses</p>
+                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -390,15 +384,15 @@ export default function App() {
 
           <button 
             onClick={() => setMessages([])}
-            className="w-full p-6 glass-premium rounded-[2rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
+            className="w-full p-5 glass-premium rounded-[1.8rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
           >
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
-                <History className="w-5 h-5 text-indigo-400" />
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
+                <History className="w-4 h-4 text-indigo-400" />
               </div>
               <div className="text-left">
-                <p className="text-[10px] uppercase tracking-[0.25em] text-white/30 font-bold mb-1">Session</p>
-                <p className="text-xs font-bold text-white/60">Clear Workspace</p>
+                <p className="text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold mb-0.5">Session</p>
+                <p className="text-[11px] font-bold text-white/60">Clear Workspace</p>
               </div>
             </div>
           </button>
@@ -417,7 +411,10 @@ export default function App() {
               >
                 <Menu className="w-6 h-6" />
               </button>
-              <div className="flex items-center gap-3">
+              <div className="lg:hidden">
+                <Logo hideVersion />
+              </div>
+              <div className="hidden lg:flex items-center gap-3">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
                 <div className="flex flex-col">
                   <p className="text-[10px] sm:text-xs font-bold text-white tracking-tight uppercase">Intelligence Active</p>
@@ -561,6 +558,45 @@ export default function App() {
   );
 }
 
+
+function Logo({ hideVersion = false, onClick }: { hideVersion?: boolean, onClick?: () => void }) {
+  return (
+    <div className="flex items-center gap-4 group cursor-pointer select-none" onClick={onClick}>
+      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-600 to-indigo-700 flex items-center justify-center shrink-0 shadow-2xl shadow-indigo-500/40 relative overflow-hidden group-hover:scale-105 transition-transform duration-500">
+        <Sparkles className="w-6 h-6 text-white relative z-10 group-hover:rotate-12 transition-transform" />
+        <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent animate-pulse" />
+      </div>
+      <div className="flex flex-col">
+        <span className="font-[Verdana] text-2xl font-bold tracking-tighter bg-gradient-to-r from-white via-white to-white/40 bg-clip-text text-transparent italic no-underline">
+          Mani AI
+        </span>
+        {!hideVersion && (
+          <span className="text-[9px] font-bold tracking-[0.3em] text-indigo-400 uppercase opacity-50 group-hover:opacity-100 transition-opacity">
+            Enterprise
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LogoDef() {
+  return (
+    <style dangerouslySetInnerHTML={{ __html: `
+      @keyframes pulse-slow {
+        0%, 100% { opacity: 0.3; transform: scale(1); }
+        50% { opacity: 0.5; transform: scale(1.1); }
+      }
+      .animate-pulse-slow {
+        animation: pulse-slow 8s ease-in-out infinite;
+      }
+      .glow-indigo { background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, transparent 70%); }
+      .glow-violet { background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%); }
+      .glow-blue { background: radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 70%); }
+    `}} />
+  );
+}
 
 function SidebarItem({ icon, label, active = false }: { icon: React.ReactNode, label: string, active?: boolean }) {
   return (
