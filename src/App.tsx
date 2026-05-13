@@ -29,7 +29,9 @@ import {
   Eye,
   Activity,
   Cpu,
-  Network
+  Network,
+  Copy,
+  Check
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from './lib/utils';
@@ -333,48 +335,48 @@ export default function App() {
             </div>
         </nav>
 
-        <div className="p-8 space-y-3">
-          <div className="p-5 glass-premium rounded-[1.8rem] border border-white/5 space-y-5 relative overflow-hidden group">
+        <div className="p-8 space-y-4">
+          <div className="p-6 glass-premium rounded-[2.5rem] border border-white/5 space-y-7 relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
             <div className="relative z-10">
-              <p className="text-[9px] uppercase tracking-[0.25em] text-indigo-400/50 font-black mb-4 flex items-center gap-2">
+              <p className="text-[10px] uppercase tracking-[0.3em] text-indigo-400/60 font-black mb-8 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
                 Network Intelligence
               </p>
               
-              <div className="grid gap-3">
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.01] border border-white/5 hover:bg-white/[0.03] transition-all">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                      <Users className="w-4 h-4 text-indigo-400" />
+              <div className="grid gap-5">
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+                      <Users className="w-6 h-6 text-indigo-400" />
                     </div>
                     <div>
-                      <p className="text-[9px] text-white/30 font-bold uppercase tracking-wider">Total Entities</p>
-                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
+                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Total Entities</p>
+                      <p className="text-lg font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.01] border border-white/5 hover:bg-white/[0.03] transition-all">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
-                      <Activity className="w-4 h-4 text-violet-400" />
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                      <Activity className="w-6 h-6 text-violet-400" />
                     </div>
                     <div>
-                      <p className="text-[9px] text-white/30 font-bold uppercase tracking-wider">Active Threads</p>
-                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
+                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Active Threads</p>
+                      <p className="text-lg font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.01] border border-white/5 hover:bg-white/[0.03] transition-all">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                      <Eye className="w-4 h-4 text-emerald-400" />
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                      <Eye className="w-6 h-6 text-emerald-400" />
                     </div>
                     <div>
-                      <p className="text-[9px] text-white/30 font-bold uppercase tracking-wider">Total Synapses</p>
-                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
+                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Total Synapses</p>
+                      <p className="text-lg font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -384,15 +386,15 @@ export default function App() {
 
           <button 
             onClick={() => setMessages([])}
-            className="w-full p-5 glass-premium rounded-[1.8rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
+            className="w-full p-6 glass-premium rounded-[2.5rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
           >
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
-                <History className="w-4 h-4 text-indigo-400" />
+            <div className="flex items-center gap-4">
+              <div className="p-4 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
+                <History className="w-6 h-6 text-indigo-400" />
               </div>
               <div className="text-left">
-                <p className="text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold mb-0.5">Session</p>
-                <p className="text-[11px] font-bold text-white/60">Clear Workspace</p>
+                <p className="text-[10px] uppercase tracking-[0.25em] text-white/30 font-bold mb-1">Session</p>
+                <p className="text-sm font-bold text-white/60">Clear Workspace</p>
               </div>
             </div>
           </button>
@@ -559,6 +561,48 @@ export default function App() {
 }
 
 
+function CodeBlock({ children, className, ...props }: any) {
+  const [copied, setCopied] = useState(false);
+  const code = String(children).replace(/\n$/, '');
+  const match = /language-(\w+)/.exec(className || '');
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group/code my-6 first:mt-0 last:mb-0">
+      <div className="absolute right-3 top-3 z-20 flex items-center gap-3">
+        {match && (
+           <div className="text-[9px] font-mono text-white/20 uppercase tracking-[0.2em] bg-white/5 px-2 py-1 rounded-lg border border-white/5">
+            {match[1]}
+          </div>
+        )}
+        <button
+          onClick={handleCopy}
+          className="p-2 rounded-xl bg-white/10 border border-white/20 text-white/60 hover:text-white hover:bg-white/20 transition-all shadow-lg backdrop-blur-md"
+        >
+          {copied ? (
+            <Check className="w-4 h-4 text-emerald-400" />
+          ) : (
+            <Copy className="w-4 h-4" />
+          )}
+        </button>
+      </div>
+      <pre className={cn(
+        "overflow-x-auto p-8 rounded-[2rem] bg-zinc-950 border border-white/5 shadow-2xl scrollbar-hide", 
+        className
+      )}>
+        <code className={cn("text-white/80 font-mono text-sm leading-relaxed", className)} {...props}>
+          {children}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
 function Logo({ hideVersion = false, onClick }: { hideVersion?: boolean, onClick?: () => void }) {
   return (
     <div className="flex items-center gap-4 group cursor-pointer select-none" onClick={onClick}>
@@ -635,10 +679,11 @@ function MessageBubble({ message }: { message: Message }) {
   
   return (
     <motion.div 
-      initial={{ opacity: 0, scale: 0.98, y: 10 }}
+      initial={{ opacity: 0, scale: 0.99, y: 12 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
       className={cn(
-        "flex w-full",
+        "flex w-full mb-8 last:mb-0",
         isUser ? "justify-end" : "justify-start"
       )}
     >
@@ -661,23 +706,35 @@ function MessageBubble({ message }: { message: Message }) {
         </div>
         
         <div className={cn(
-          "px-8 py-7 rounded-[2rem] shadow-2xl relative overflow-hidden backdrop-blur-xl",
+          "px-8 py-7 rounded-[2.5rem] shadow-2xl relative overflow-hidden backdrop-blur-3xl",
           isUser 
-            ? "bg-white/[0.04] border border-white/10 text-white/90 rounded-tr-none" 
-            : "bg-white/[0.02] text-white/90 rounded-tl-none border border-white/5"
+            ? "bg-white/[0.12] border border-white/20 text-white rounded-tr-none shadow-indigo-500/10" 
+            : "bg-[#0A0A0B]/95 text-white rounded-tl-none border border-white/5 shadow-black/40"
         )}>
           {!isUser && (
-            <div className="absolute top-0 right-0 p-8 opacity-[0.02] pointer-events-none">
-              <Sparkles className="w-24 h-24" />
+            <div className="absolute top-0 right-0 p-10 opacity-[0.03] pointer-events-none">
+              <Sparkles className="w-32 h-32" />
             </div>
           )}
           <div className="prose prose-invert prose-sm max-w-none 
-            prose-p:leading-[1.7] prose-p:text-white/70 prose-p:text-base prose-p:font-medium
+            prose-p:leading-[1.8] prose-p:text-white/90 prose-p:text-base prose-p:font-medium
             prose-headings:font-display prose-headings:text-indigo-400 prose-headings:font-bold prose-headings:mb-6
             prose-code:text-indigo-300 prose-code:bg-indigo-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:font-mono
             prose-strong:text-indigo-400 prose-strong:font-bold
-            prose-pre:bg-white/[0.02] prose-pre:border prose-pre:border-white/5 prose-pre:rounded-2xl">
-            <ReactMarkdown>{message.content}</ReactMarkdown>
+            prose-pre:bg-transparent prose-pre:p-0 prose-pre:border-none prose-pre:my-0">
+            <ReactMarkdown
+              components={{
+                code({ node, inline, className, children, ...props }: any) {
+                  return !inline ? (
+                    <CodeBlock className={className} {...props}>{children}</CodeBlock>
+                  ) : (
+                    <code className={className} {...props}>{children}</code>
+                  )
+                }
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
           </div>
           
           {message.sources && message.sources.length > 0 && (
