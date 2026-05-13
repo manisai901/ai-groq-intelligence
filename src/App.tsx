@@ -82,18 +82,55 @@ export default function App() {
         })
       });
 
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
+      if (!response.ok) throw new Error('Failed to connect');
+      
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      let assistantText = '';
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: '',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, assistantMessage]);
 
-      setMessages(prev => [
-        ...prev,
-        { 
-          role: 'assistant', 
-          content: data.text, 
-          sources: data.sources,
-          timestamp: new Date() 
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') break;
+            
+            try {
+              const { text, error } = JSON.parse(data);
+              if (error) throw new Error(error);
+              if (text) {
+                assistantText += text;
+                setMessages(prev => {
+                  const currentMessages = [...prev];
+                  const lastIndex = currentMessages.length - 1;
+                  if (currentMessages[lastIndex].role === 'assistant') {
+                    currentMessages[lastIndex] = {
+                      ...currentMessages[lastIndex],
+                      content: assistantText
+                    };
+                  }
+                  return currentMessages;
+                });
+              }
+            } catch (e) {
+              console.error("Error parsing stream chunk", e);
+            }
+          }
         }
-      ]);
+      }
     } catch (error) {
       console.error(error);
       setMessages(prev => [
@@ -151,54 +188,27 @@ export default function App() {
         </div>
 
         <nav className="flex-1 p-6 flex flex-col gap-10 overflow-y-auto scrollbar-hide">
-          <section>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/20 font-bold mb-6 px-2">Knowledge Core</p>
             <div className="space-y-1.5">
-              <SidebarItem icon={<Globe className="w-4 h-4" />} label="World Index" active />
-              <SidebarItem icon={<Layers className="w-4 h-4" />} label="Neural Layers" />
-              <SidebarItem icon={<Database className="w-4 h-4" />} label="Memory Pools" />
-              <SidebarItem icon={<TrendingUp className="w-4 h-4" />} label="Market Feed" />
+              <SidebarItem icon={<MessageSquare className="w-4 h-4" />} label="Recent Chats" active />
+              <SidebarItem icon={<Sparkles className="w-4 h-4" />} label="New Session" />
             </div>
-          </section>
-          
-          <section>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/20 font-bold mb-6 px-2">Intelligence Stream</p>
-            <div className="space-y-6 px-2">
-              {[
-                "Quantum Computing Q4",
-                "Neural Network Topology",
-                "Deep Field Analysis",
-                "Global Market Shift"
-              ].map((item, i) => (
-                <div key={i} className="flex flex-col gap-2 group cursor-pointer">
-                  <div className="flex items-center gap-3 text-xs text-white/40 group-hover:text-indigo-300 transition-colors truncate font-semibold">
-                    <History className="w-3.5 h-3.5 opacity-30 group-hover:opacity-100" />
-                    {item}
-                  </div>
-                  <div className="w-full h-0.5 bg-white/5 rounded-full overflow-hidden">
-                    <div className="w-0 group-hover:w-full h-full bg-indigo-500/40 transition-all duration-500" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
         </nav>
 
         <div className="p-8">
-          <div className="p-6 glass-premium rounded-[2rem] relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-              <Sparkles className="w-16 h-16" />
+          <button 
+            onClick={() => setMessages([])}
+            className="w-full p-6 glass-premium rounded-[2rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
+          >
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
+                <History className="w-5 h-5 text-indigo-400" />
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] uppercase tracking-[0.25em] text-white/30 font-bold mb-1">Session</p>
+                <p className="text-xs font-bold text-white/60">Clear Workspace</p>
+              </div>
             </div>
-            <p className="text-[10px] uppercase tracking-[0.25em] text-white/30 font-bold mb-4">Neural Load</p>
-            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: '92%' }}
-                className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]"
-              />
-            </div>
-            <p className="text-[9px] mt-4 tracking-widest text-indigo-400/60 font-bold uppercase">Uptime: 242d 12h</p>
-          </div>
+          </button>
         </div>
       </aside>
 
@@ -217,17 +227,14 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
                 <div className="flex flex-col">
-                  <p className="text-[10px] sm:text-xs font-bold text-white tracking-tight">System Status</p>
-                  <p className="text-[8px] sm:text-[9px] text-white/20 uppercase tracking-[0.2em] font-bold">Latency: 8.4ms</p>
+                  <p className="text-[10px] sm:text-xs font-bold text-white tracking-tight uppercase">Intelligence Active</p>
                 </div>
               </div>
             </div>
 
             <div className="hidden lg:flex items-center gap-10">
               <nav className="flex items-center gap-8">
-                {['Analysis', 'Visualization', 'Lineage'].map((item) => (
-                  <button key={item} className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/20 hover:text-white transition-colors">{item}</button>
-                ))}
+                <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-indigo-400/60">Active Engine: Groq Llama 3.3</span>
               </nav>
             </div>
 
@@ -337,9 +344,8 @@ export default function App() {
               <span className="text-[8px] opacity-40 group-hover:opacity-100">SUPPORT</span>
             </a>
           </div>
-          <div className="text-[9px] sm:text-[10px] font-mono text-white/20 tracking-widest font-bold flex items-center gap-4">
-            <span className="opacity-40">[ COORDINATES: 37.77 N / 122.41 W ]</span>
-            <span className="text-indigo-400/60 tabular-nums">
+          <div className="flex items-center gap-4">
+            <span className="text-[9px] sm:text-[10px] font-mono text-indigo-400/60 tracking-widest font-bold tabular-nums">
               {currentTime.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })} | {currentTime.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           </div>
@@ -361,7 +367,6 @@ function SidebarItem({ icon, label, active = false }: { icon: React.ReactNode, l
         {icon}
       </div>
       <span className="hidden md:block text-sm font-semibold tracking-tight truncate">{label}</span>
-      {active && <span className="hidden md:block ml-auto text-[8px] font-bold opacity-30 tracking-[0.2em]">LIVE</span>}
     </div>
   );
 }
@@ -380,28 +385,6 @@ function SuggestionCard({ title, description, onClick }: { title: string, descri
       </div>
       <p className="text-sm text-white/40 leading-relaxed font-medium group-hover:text-white/60 transition-colors">{description}</p>
     </button>
-  );
-}
-
-function SourceCard({ source }: { source: { uri: string; title: string } }) {
-  return (
-    <a 
-      href={source.uri} 
-      target="_blank" 
-      rel="noopener noreferrer"
-      className="block p-4 rounded-[1.5rem] bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/20 transition-all group shadow-lg"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
-          <Globe className="w-4 h-4 text-indigo-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-white/90 line-clamp-1 group-hover:text-indigo-300 transition-colors">{source.title}</p>
-          <p className="text-[10px] text-white/20 font-mono truncate mt-1.5 uppercase tracking-widest font-bold">{new URL(source.uri).hostname}</p>
-        </div>
-        <ExternalLink className="w-3 h-3 text-white/10 group-hover:text-white/40 transition-colors mt-1 shrink-0" />
-      </div>
-    </a>
   );
 }
 
