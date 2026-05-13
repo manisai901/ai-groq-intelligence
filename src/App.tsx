@@ -335,48 +335,48 @@ export default function App() {
             </div>
         </nav>
 
-        <div className="p-8 space-y-3.5">
-          <div className="p-5 glass-premium rounded-[2rem] border border-white/5 space-y-6 relative overflow-hidden group">
+        <div className="p-6 space-y-3">
+          <div className="p-4 glass-premium rounded-2xl border border-white/5 space-y-4 relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
             <div className="relative z-10">
-              <p className="text-[9px] uppercase tracking-[0.3em] text-indigo-400/60 font-black mb-5 flex items-center gap-2">
+              <p className="text-[9px] uppercase tracking-[0.2em] text-indigo-400/70 font-black mb-4 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
                 Network Intelligence
               </p>
               
-              <div className="grid gap-3.5">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                      <Users className="w-5 h-5 text-indigo-400" />
+              <div className="grid gap-2.5">
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                      <Users className="w-4 h-4 text-indigo-400" />
                     </div>
                     <div>
-                      <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider">Total Entities</p>
-                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
+                      <p className="text-[8px] text-white/50 font-bold uppercase tracking-wider">Total Entities</p>
+                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center">
-                      <Activity className="w-5 h-5 text-violet-400" />
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                      <Activity className="w-4 h-4 text-violet-400" />
                     </div>
                     <div>
-                      <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider">Active Threads</p>
-                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
+                      <p className="text-[8px] text-white/50 font-bold uppercase tracking-wider">Active Threads</p>
+                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                      <Eye className="w-5 h-5 text-emerald-400" />
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                      <Eye className="w-4 h-4 text-emerald-400" />
                     </div>
                     <div>
-                      <p className="text-[9px] text-white/40 font-bold uppercase tracking-wider">Total Synapses</p>
-                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
+                      <p className="text-[8px] text-white/50 font-bold uppercase tracking-wider">Total Synapses</p>
+                      <p className="text-sm font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -386,15 +386,15 @@ export default function App() {
 
           <button 
             onClick={() => setMessages([])}
-            className="w-full p-5 glass-premium rounded-[2rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
+            className="w-full p-4 glass-premium rounded-2xl relative overflow-hidden group hover:bg-white/[0.1] transition-all border border-white/5"
           >
             <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
-                <History className="w-5 h-5 text-indigo-400" />
+              <div className="p-2.5 rounded-lg bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors">
+                <History className="w-4 h-4 text-indigo-400" />
               </div>
               <div className="text-left">
-                <p className="text-[9px] uppercase tracking-[0.25em] text-white/30 font-bold mb-1">Session</p>
-                <p className="text-xs font-bold text-white/60">Clear Workspace</p>
+                <p className="text-[9px] uppercase tracking-[0.2em] text-white/40 font-bold mb-0.5">Session</p>
+                <p className="text-[11px] font-bold text-white/80">Clear Workspace</p>
               </div>
             </div>
           </button>
@@ -582,20 +582,20 @@ function CodeBlock({ children, className, ...props }: any) {
         )}
         <button
           onClick={handleCopy}
-          className="p-2 rounded-xl bg-white/10 border border-white/20 text-white/60 hover:text-white hover:bg-white/20 transition-all shadow-lg backdrop-blur-md"
+          className="p-1.5 rounded-lg bg-white/10 border border-white/20 text-white/80 hover:text-white hover:bg-white/20 transition-all shadow-lg backdrop-blur-md opacity-0 group-hover/code:opacity-100"
         >
           {copied ? (
-            <Check className="w-4 h-4 text-emerald-400" />
+            <Check className="w-3.5 h-3.5 text-emerald-400" />
           ) : (
-            <Copy className="w-4 h-4" />
+            <Copy className="w-3.5 h-3.5" />
           )}
         </button>
       </div>
       <pre className={cn(
-        "overflow-x-auto p-8 rounded-[2rem] bg-zinc-950 border border-white/5 shadow-2xl scrollbar-hide", 
+        "overflow-x-auto p-5 rounded-2xl bg-zinc-950 border border-white/5 shadow-xl scrollbar-hide", 
         className
       )}>
-        <code className={cn("text-white/80 font-mono text-sm leading-relaxed", className)} {...props}>
+        <code className={cn("text-white/90 font-mono text-[13px] leading-relaxed", className)} {...props}>
           {children}
         </code>
       </pre>
