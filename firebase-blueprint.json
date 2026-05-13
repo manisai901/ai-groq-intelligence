@@ -1,0 +1,35 @@
+{
+  "entities": {
+    "GlobalStats": {
+      "title": "Global Stats",
+      "description": "Aggregated application usage statistics",
+      "type": "object",
+      "properties": {
+        "totalUsers": { "type": "number", "description": "Total unique users ever registered via local storage ID" },
+        "totalVisits": { "type": "number", "description": "Total number of page loads" }
+      },
+      "required": ["totalUsers", "totalVisits"]
+    },
+    "DailyStats": {
+      "title": "Daily Stats",
+      "description": "Statistics for a specific day",
+      "type": "object",
+      "properties": {
+        "uniqueUsers": { "type": "number", "description": "Unique users for this day" },
+        "visits": { "type": "number", "description": "Total visits for this day" },
+        "date": { "type": "string", "format": "date", "description": "ISO date string YYYY-MM-DD" }
+      },
+      "required": ["uniqueUsers", "visits", "date"]
+    }
+  },
+  "firestore": {
+    "/stats/global": {
+      "schema": "GlobalStats",
+      "description": "Global usage counters"
+    },
+    "/daily_stats/{date}": {
+      "schema": "DailyStats",
+      "description": "Daily usage counters indexed by date"
+    }
+  }
+}

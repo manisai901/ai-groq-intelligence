@@ -40,6 +40,13 @@ To connect and deploy your app to **Render.com**, follow these steps:
    - Add a secret variable in Render: `GROQ_API_KEY` (Your API key from Groq Console).
 5. **Port**: Render automatically handles the `PORT` variable, and your server is configured to use it.
 
+## Sharing & Buzz
+
+**WhatsApp Status Ideas:**
+- 🧠 *Limitless intelligence. Zero latency. Experience Mani AI v3.5.*
+- 🚀 *Next-gen Groq Llama 3.3 power is here. Try the new Mani Intelligence dashboard.*
+- ⚡ *Mani AI: Real-time neural synthesis at your fingertips.*
+
 ## Local Development
 
 ```bash

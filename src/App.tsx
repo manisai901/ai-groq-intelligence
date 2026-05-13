@@ -24,10 +24,15 @@ import {
   X,
   Mail,
   Mic,
-  MicOff
+  MicOff,
+  Users,
+  Eye,
+  Activity
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from './lib/utils';
+import { doc, getDoc, setDoc, updateDoc, increment, onSnapshot } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
 // Declare SpeechRecognition types for TS
 declare global {
@@ -51,9 +56,94 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [stats, setStats] = useState({ totalUsers: 0, totalVisits: 0, dailyUsers: 0 });
   const [currentTime, setCurrentTime] = useState(new Date());
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Tracking Logic
+    const trackActivity = async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const visitorId = localStorage.getItem('visitor_id');
+      const lastVisitDate = localStorage.getItem('last_visit_date');
+      const isNewVisitor = !visitorId;
+      const isNewDay = lastVisitDate !== today;
+
+      let currentId = visitorId;
+      if (isNewVisitor) {
+        currentId = Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('visitor_id', currentId!);
+      }
+      localStorage.setItem('last_visit_date', today);
+
+      const globalRef = doc(db, 'stats', 'global');
+      const dailyRef = doc(db, 'daily_stats', today);
+
+      // 1. Global Tracking
+      try {
+        const globalSnap = await getDoc(globalRef);
+        if (!globalSnap.exists()) {
+          await setDoc(globalRef, { totalUsers: 1, totalVisits: 1 });
+        } else {
+          await updateDoc(globalRef, {
+            totalVisits: increment(1),
+            totalUsers: isNewVisitor ? increment(1) : increment(0)
+          });
+        }
+      } catch (err: any) {
+        if (err.code === 'permission-denied') {
+          // Attempt recovery if the doc actually exists now but getDoc failed
+          try {
+             await updateDoc(globalRef, { totalVisits: increment(1) });
+          } catch (e) {}
+        }
+        console.warn("Global tracking silent failure:", err.message);
+      }
+
+      // 2. Daily Tracking
+      try {
+        const dailySnap = await getDoc(dailyRef);
+        if (!dailySnap.exists()) {
+          await setDoc(dailyRef, { uniqueUsers: 1, visits: 1, date: today });
+        } else {
+          await updateDoc(dailyRef, {
+            visits: increment(1),
+            uniqueUsers: isNewDay ? increment(1) : increment(0)
+          });
+        }
+      } catch (err: any) {
+        console.warn("Daily tracking silent failure:", err.message);
+      }
+    };
+
+    trackActivity();
+
+    // Listen for stats updates
+    const unsubGlobal = onSnapshot(doc(db, 'stats', 'global'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setStats(prev => ({ ...prev, totalUsers: data.totalUsers, totalVisits: data.totalVisits }));
+      }
+    }, (error) => {
+      console.warn("Global stats read-only until data exists:", error.message);
+    });
+
+    const todayString = new Date().toISOString().split('T')[0];
+    const unsubDaily = onSnapshot(doc(db, 'daily_stats', todayString), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setStats(prev => ({ ...prev, dailyUsers: data.uniqueUsers }));
+      }
+    }, (error) => {
+      console.warn("Daily stats read-only until data exists:", error.message);
+    });
+
+    return () => {
+      unsubGlobal();
+      unsubDaily();
+    };
+  }, []);
 
   useEffect(() => {
     // Initialize Web Speech API
@@ -233,7 +323,7 @@ export default function App() {
               <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <div className="flex flex-col">
-              <span className="font-display text-2xl font-bold tracking-tighter bg-gradient-to-r from-white to-white/40 bg-clip-text text-transparent italic">Mani AI</span>
+              <span className="font-[Verdana] text-2xl font-bold tracking-tighter bg-gradient-to-r from-white to-white/40 bg-clip-text text-transparent italic no-underline">Mani AI</span>
               <span className="text-[9px] font-bold tracking-[0.3em] text-indigo-400 uppercase opacity-50">Enterprise</span>
             </div>
           </div>
@@ -249,7 +339,55 @@ export default function App() {
             </div>
         </nav>
 
-        <div className="p-8">
+        <div className="p-8 space-y-4">
+          <div className="p-6 glass-premium rounded-[2rem] border border-white/5 space-y-6 relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+            <div className="relative z-10">
+              <p className="text-[10px] uppercase tracking-[0.3em] text-indigo-400/60 font-black mb-6 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                Network Intelligence
+              </p>
+              
+              <div className="grid gap-5">
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-indigo-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Total Entities</p>
+                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.totalUsers.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                      <Activity className="w-5 h-5 text-violet-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Active Threads</p>
+                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.dailyUsers.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                      <Eye className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Total Synapses</p>
+                      <p className="text-base font-black text-white tabular-nums tracking-tight">{stats.totalVisits.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <button 
             onClick={() => setMessages([])}
             className="w-full p-6 glass-premium rounded-[2rem] relative overflow-hidden group hover:bg-white/[0.05] transition-all"
