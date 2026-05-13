@@ -22,10 +22,20 @@ import {
   Info,
   Menu,
   X,
-  Mail
+  Mail,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from './lib/utils';
+
+// Declare SpeechRecognition types for TS
+declare global {
+  interface Window {
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
+  }
+}
 
 interface Message {
   role: 'user' | 'assistant';
@@ -39,9 +49,54 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Initialize Web Speech API
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(prev => {
+          const newPath = prev ? `${prev} ${transcript}` : transcript;
+          return newPath;
+        });
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Voice recognition is not supported in this browser.");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -304,13 +359,26 @@ export default function App() {
                   <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-white/[0.02] flex items-center justify-center shrink-0 border border-white/[0.05] group-focus-within:text-indigo-400 transition-colors">
                     <Sparkles className="w-5 h-5 opacity-40 group-focus-within:opacity-100" />
                   </div>
-                  <div className="flex-1 relative">
+                  <div className="flex-1 relative flex items-center">
                     <input
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       placeholder="Ask Mani anything..."
                       className="w-full bg-transparent border-none py-2 sm:py-3 px-2 sm:px-0 text-sm focus:outline-none focus:ring-0 text-white placeholder:text-white/10 font-medium"
                     />
+                    <button
+                      type="button"
+                      onClick={toggleListening}
+                      className={cn(
+                        "p-2 rounded-xl transition-all duration-300 mr-2",
+                        isListening 
+                          ? "bg-red-500/20 text-red-400 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.3)]" 
+                          : "text-white/20 hover:text-indigo-400 hover:bg-white/5"
+                      )}
+                      title={isListening ? "Stop listening" : "Start voice input"}
+                    >
+                      {isListening ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
+                    </button>
                   </div>
                   <button 
                     disabled={isLoading || !input.trim()}

@@ -1,6 +1,6 @@
 {
   "name": "Mani AI Intelligence",
-  "description": "A powerful data fetching and analysis assistant powered by Gemini with search grounding for real-time online data. Built by Mani.",
-  "requestFramePermissions": [],
+  "description": "A high-performance intelligence assistant powered by Groq Llama 3.3 for near-instant responses. Built by Mani.",
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
