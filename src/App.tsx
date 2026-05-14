@@ -240,18 +240,32 @@ export default function App() {
   }, []);
 
   // Fetch conversations for current user
-  const [conversationsSnapshot] = useCollection(
+  const [conversationsSnapshot, loadingConversations, convError] = useCollection(
     user ? query(
       collection(db, 'conversations'),
-      where('userId', '==', user.uid),
-      orderBy('lastUpdatedAt', 'desc')
+      where('userId', '==', user.uid)
     ) : null
   );
+
+  if (convError) {
+    console.error("Conversations fetch error:", convError);
+  }
 
   const conversations = conversationsSnapshot?.docs.map(doc => ({
     id: doc.id,
     ...doc.data()
-  } as Conversation)) || [];
+  } as Conversation)).sort((a, b) => {
+    const t1 = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate?.()?.getTime() || 0;
+    const t2 = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate?.()?.getTime() || 0;
+    return t2 - t1; // desc
+  }) || [];
+
+  // Auto-select first conversation if available
+  useEffect(() => {
+    if (user && !activeConversationId && conversations.length > 0 && !loadingConversations) {
+      setActiveConversationId(conversations[0].id);
+    }
+  }, [user, activeConversationId, conversations, loadingConversations]);
 
   // Fetch messages when activeConversationId changes
   useEffect(() => {
