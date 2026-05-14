@@ -251,21 +251,29 @@ export default function App() {
     console.error("Conversations fetch error:", convError);
   }
 
-  const conversations = conversationsSnapshot?.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  } as Conversation)).sort((a, b) => {
+  const conversations = conversationsSnapshot?.docs.map(doc => {
+    const data = doc.data({ serverTimestamps: 'estimate' });
+    return {
+      id: doc.id,
+      ...data
+    } as Conversation;
+  }).sort((a, b) => {
     const t1 = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate?.()?.getTime() || 0;
     const t2 = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate?.()?.getTime() || 0;
     return t2 - t1; // desc
   }) || [];
 
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+
   // Auto-select first conversation if available
   useEffect(() => {
-    if (user && !activeConversationId && conversations.length > 0 && !loadingConversations) {
+    if (user && !activeConversationId && conversations.length > 0 && !loadingConversations && !initialLoadDone) {
       setActiveConversationId(conversations[0].id);
+      setInitialLoadDone(true);
+    } else if (user && !loadingConversations && !initialLoadDone) {
+      setInitialLoadDone(true);
     }
-  }, [user, activeConversationId, conversations, loadingConversations]);
+  }, [user, activeConversationId, conversations, loadingConversations, initialLoadDone]);
 
   // Fetch messages when activeConversationId changes
   useEffect(() => {
@@ -311,21 +319,10 @@ export default function App() {
   }, [activeConversationId, user]);
 
   const startNewConversation = useCallback(async () => {
-    if (!user) return;
-    try {
-      const docRef = await addDoc(collection(db, 'conversations'), {
-        userId: user.uid,
-        title: 'New Conversation',
-        createdAt: serverTimestamp(),
-        lastUpdatedAt: serverTimestamp()
-      });
-      setActiveConversationId(docRef.id);
-      setMessages([]);
-      setSidebarOpen(false);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'conversations');
-    }
-  }, [user]);
+    setActiveConversationId(null);
+    setMessages([]);
+    setSidebarOpen(false);
+  }, []);
 
   const deleteConversation = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();

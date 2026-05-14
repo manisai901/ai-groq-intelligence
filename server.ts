@@ -46,8 +46,12 @@ async function startServer() {
         { role: "user" as const, content: message }
       ];
 
-      // Limit history to last 10 messages for performance and token safety
-      const finalMessages = messages.slice(-11);
+      const systemMessage = messages[0];
+      const otherMessages = messages.slice(1);
+      
+      // Keep only last 10 messages but preserve system prompt
+      const recentMessages = otherMessages.slice(-10);
+      const finalMessages = [systemMessage, ...recentMessages];
 
       console.log(`Sending request to Groq with ${finalMessages.length} messages`);
       console.log(`Last message: "${message}"`);
