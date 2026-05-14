@@ -758,7 +758,7 @@ export default function App() {
                         }
                       }}
                       rows={1}
-                      placeholder="Neural query interface.."
+                      placeholder="Ask Mani anything..."
                       className="w-full bg-transparent border-none py-3 px-2 sm:px-0 text-sm focus:outline-none focus:ring-0 text-white placeholder:text-white/10 font-bold resize-none min-h-[44px] max-h-48 scrollbar-hide flex items-center"
                       style={{ height: 'auto', minHeight: '44px' }}
                       onInput={(e) => {
