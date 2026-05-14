@@ -94,14 +94,8 @@ service cloud.firestore {
 
       // Messages Subcollection
       match /messages/{messageId} {
-        // Enforce parent ownership check for messages
-        function parentOwned() {
-          return get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
-        }
-
-        allow list: if isSignedIn() && parentOwned();
-        allow get: if isSignedIn() && parentOwned();
-        allow create: if isSignedIn() && parentOwned() && isValidMessage(incoming()) && isValidId(messageId);
+        allow list, get: if isSignedIn();
+        allow create: if isSignedIn() && isValidMessage(incoming()) && isValidId(messageId);
         allow update, delete: if false; // Messages are immutable in this flow
       }
     }

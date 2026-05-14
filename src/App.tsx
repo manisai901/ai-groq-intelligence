@@ -108,6 +108,26 @@ export default function App() {
   const [editTitle, setEditTitle] = useState('');
   
   const [showSupportMail, setShowSupportMail] = useState(false);
+  const [streamingContent, setStreamingContent] = useState<{ id: string, content: string } | null>(null);
+  const [isConfigMode, setIsConfigMode] = useState(false);
+  const [configStatus, setConfigStatus] = useState<{ hasKey: boolean, checked: boolean }>({ hasKey: false, checked: false });
+
+  // Check config on mount
+  useEffect(() => {
+    const checkConfig = async () => {
+      try {
+        const r = await fetch('/api/check-config');
+        const data = await r.json();
+        setConfigStatus({ hasKey: data.hasGroqKey, checked: true });
+        if (!data.hasGroqKey) {
+          console.warn("GROQ_API_KEY missing");
+        }
+      } catch (e) {
+        setConfigStatus(prev => ({ ...prev, checked: true }));
+      }
+    };
+    checkConfig();
+  }, []);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -246,11 +266,31 @@ export default function App() {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Message));
+      const msgs = snapshot.docs.map(doc => {
+        const data = doc.data({ serverTimestamps: 'estimate' });
+        let ts = new Date();
+        if (data.timestamp) {
+          if (typeof data.timestamp.toDate === 'function') {
+            ts = data.timestamp.toDate();
+          } else if (data.timestamp instanceof Date) {
+            ts = data.timestamp;
+          } else if (typeof data.timestamp === 'number' || typeof data.timestamp === 'string') {
+            ts = new Date(data.timestamp);
+          }
+        }
+        return {
+          id: doc.id,
+          ...data,
+          timestamp: ts
+        } as Message;
+      });
+      
+      // Sort client-side to be absolutely certain
+      msgs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      
       setMessages(msgs);
+    }, (error) => {
+      console.error("Messages Subscription Error:", error);
     });
 
     return () => unsubscribe();
@@ -381,98 +421,140 @@ export default function App() {
 
     const userMessage = input.trim();
     setInput('');
+    setIsLoading(true);
     
-    // Ensure we have a conversation
     let currentConvId = activeConversationId;
+    
+    // Create new conversation document locally and set ID immediately
     if (!currentConvId) {
-      try {
-        const docRef = await addDoc(collection(db, 'conversations'), {
-          userId: user.uid,
-          title: userMessage.slice(0, 30),
-          createdAt: serverTimestamp(),
-          lastUpdatedAt: serverTimestamp()
-        });
-        currentConvId = docRef.id;
-        setActiveConversationId(currentConvId);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, 'conversations');
-        return;
-      }
+      const newConvRef = doc(collection(db, 'conversations'));
+      currentConvId = newConvRef.id;
+      setActiveConversationId(currentConvId);
+      
+      setDoc(newConvRef, {
+        userId: user.uid,
+        title: userMessage.slice(0, 30),
+        createdAt: serverTimestamp(),
+        lastUpdatedAt: serverTimestamp()
+      }).catch(err => {
+        console.error("Conversation creation failed:", err);
+      });
     }
 
     try {
-      setIsLoading(true);
+      // 1. Add user message locally for instant feedback
+      const localUserMsg: Message = {
+        id: 'temp-user-' + Date.now(),
+        role: 'user',
+        content: userMessage,
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, localUserMsg]);
 
-      // 1. Save user message to Firestore
-      await addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
+      // 2. Save user message to Firestore in background
+      addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
         role: 'user',
         content: userMessage,
         timestamp: serverTimestamp()
+      }).catch(err => {
+        console.error("Message save error:", err);
       });
 
-      // 2. Call backend for streaming response
+      console.log("Calling backend synthesis...");
+      // 3. Call backend for streaming response
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           message: userMessage,
           history: messages.map(m => ({
             role: m.role,
-            parts: [{ text: m.content }]
+            content: m.content
           }))
         })
       });
-
-      if (!response.ok) throw new Error('Failed to connect');
       
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server Error (${response.status})`);
+      }
+      
+      const tempId = 'streaming-' + Date.now();
+      setStreamingContent({ id: tempId, content: '_Neural synthesis in progress..._' });
+
       let assistantText = '';
-      
-      // Update UI optimistically for streaming
-      const tempId = 'temp-' + Date.now();
-      setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: new Date(), id: tempId }]);
+      const decoder = new TextDecoder();
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response reader available");
 
-      while (reader) {
+      let buffer = '';
+      while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data: ')) {
+            const data = trimmed.slice(6);
             if (data === '[DONE]') break;
             
+            let parsed;
             try {
-              const { text, error: streamError } = JSON.parse(data);
-              if (streamError) throw new Error(streamError);
-              if (text) {
-                assistantText += text;
-                setMessages(prev => prev.map(m => m.id === tempId ? { ...m, content: assistantText } : m));
-              }
-            } catch (e) {}
+              parsed = JSON.parse(data);
+            } catch (e) {
+              continue;
+            }
+            
+            if (parsed.error) throw new Error(parsed.error);
+            if (parsed.text) {
+              if (assistantText === '') assistantText = parsed.text;
+              else assistantText += parsed.text;
+              setStreamingContent({ id: tempId, content: assistantText });
+            }
           }
         }
       }
+      
+      setStreamingContent(null);
 
-      // 3. Save full assistant message to Firestore
-      await addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
-        role: 'assistant',
-        content: assistantText,
-        timestamp: serverTimestamp()
-      });
+      // 4. Save full assistant message to Firestore in background
+      if (assistantText.trim()) {
+        addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
+          role: 'assistant',
+          content: assistantText,
+          timestamp: serverTimestamp()
+        }).catch(err => console.error(err));
+      }
 
       // Update conversation metadata
-      await updateDoc(doc(db, 'conversations', currentConvId), {
+      updateDoc(doc(db, 'conversations', currentConvId), {
         lastUpdatedAt: serverTimestamp()
-      });
+      }).catch(err => console.error(err));
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      const errorMsg = error.message || "Synthesis failed. Please verify your Groq API Key in the Settings menu.";
+      
+      setMessages(prev => [...prev, {
+        id: 'error-' + Date.now(),
+        role: 'assistant',
+        content: `**SYSTEM ALERT:** ${errorMsg}`,
+        timestamp: new Date()
+      }]);
     } finally {
       setIsLoading(false);
+      setStreamingContent(null);
     }
   };
 
@@ -545,30 +627,30 @@ export default function App() {
 
       {/* Modern Sidebar */}
       <aside className={cn(
-        "fixed lg:static inset-y-0 left-0 w-72 sidebar-glass z-50 shrink-0 flex flex-col transition-transform duration-300 transform lg:translate-x-0 outline-none",
+        "fixed lg:static inset-y-0 left-0 w-60 sidebar-glass z-50 shrink-0 flex flex-col transition-transform duration-300 transform lg:translate-x-0 outline-none",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="p-8 pb-4 flex items-center justify-between">
+        <div className="p-4 pb-2 flex items-center justify-between">
           <Logo onClick={() => setSidebarOpen(false)} />
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-2 text-white/40 hover:text-white">
-            <X className="w-6 h-6" />
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 text-white/40 hover:text-white">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="px-6 mb-6">
+        <div className="px-3 mb-3">
           <button 
             onClick={startNewConversation}
-            className="w-full p-4 glass-premium rounded-2xl border border-white/5 flex items-center gap-3 text-indigo-400 hover:bg-white/5 transition-all group"
+            className="w-full p-2.5 glass-premium rounded-lg border border-white/5 flex items-center gap-2 text-indigo-400 hover:bg-white/5 transition-all group"
           >
-            <div className="p-2 rounded-xl bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-all">
-              <Plus className="w-4 h-4" />
+            <div className="p-1 rounded-md bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-all">
+              <Plus className="w-3 h-3" />
             </div>
-            <span className="text-sm font-bold uppercase tracking-widest">New Chat</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest">New Chat</span>
           </button>
         </div>
 
-        <nav className="flex-1 px-6 overflow-y-auto scrollbar-hide space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/20 mb-4 px-2">History</p>
+        <nav className="flex-1 px-2.5 overflow-y-auto scrollbar-hide space-y-0.5">
+          <p className="text-[7px] font-black uppercase tracking-[0.3em] text-white/20 mb-1.5 px-2">History</p>
           {conversations.map((conv) => (
             <div 
               key={conv.id}
@@ -578,14 +660,14 @@ export default function App() {
                 setSidebarOpen(false);
               }}
               className={cn(
-                "group relative flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all border border-transparent",
+                "group relative flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all border border-transparent",
                 activeConversationId === conv.id 
                   ? "bg-indigo-500/10 text-indigo-400 border-white/5" 
                   : "text-white/40 hover:bg-white/[0.03] hover:text-white/80"
               )}
             >
-              <div className="flex items-center gap-3 overflow-hidden flex-1">
-                <MessageSquare className="w-4 h-4 shrink-0 opacity-40 group-hover:opacity-100" />
+              <div className="flex items-center gap-2 overflow-hidden flex-1">
+                <MessageSquare className="w-3 h-3 shrink-0 opacity-40 group-hover:opacity-100" />
                 {editingId === conv.id ? (
                   <form onSubmit={(e) => renameConversation(e, conv.id)} className="flex-1">
                     <input
@@ -630,17 +712,17 @@ export default function App() {
           )}
         </nav>
 
-        {/* User Profile Hook */}
-        <div className="p-6 mt-auto space-y-4">
+        {/* User Profile - Compact */}
+        <div className="p-3 mt-auto space-y-2">
           <div 
             onClick={() => setShowSupportMail(!showSupportMail)}
-            className="flex items-center justify-center p-4 rounded-2xl bg-white/[0.02] border border-white/5 group cursor-pointer hover:bg-white/5 transition-all relative"
+            className="flex items-center justify-center p-2 rounded-lg bg-white/[0.02] border border-white/5 group cursor-pointer hover:bg-white/5 transition-all"
           >
             <div className={cn(
-              "p-3 rounded-xl transition-all flex items-center gap-3",
-              showSupportMail ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-white/40 group-hover:text-emerald-400"
+              "flex items-center gap-1.5 transition-all text-white/40 group-hover:text-emerald-400",
+              showSupportMail && "text-emerald-400"
             )}>
-              <LifeBuoy className="w-5 h-5" />
+              <LifeBuoy className="w-3 h-3" />
               <AnimatePresence>
                 {showSupportMail && (
                   <motion.div
@@ -649,26 +731,25 @@ export default function App() {
                     exit={{ opacity: 0, width: 0 }}
                     className="overflow-hidden whitespace-nowrap"
                   >
-                    <p className="text-[11px] font-bold tracking-tight">manikantasaivootla@gmail.com</p>
+                    <p className="text-[8px] font-bold tracking-tight">manikantasaivootla@gmail.com</p>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
           </div>
 
-          <div className="p-4 glass-premium rounded-2xl border border-white/5 space-y-4 relative overflow-hidden group">
-            <div className="flex items-center gap-3">
-               <img src={user.photoURL || ''} className="w-10 h-10 rounded-xl border border-white/10" alt="Profile" />
+          <div className="p-2.5 glass-premium rounded-xl border border-white/5 space-y-2 relative overflow-hidden group">
+            <div className="flex items-center gap-2">
+               <img src={user.photoURL || ''} className="w-6 h-6 rounded-md border border-white/10" alt="Profile" />
                <div className="overflow-hidden">
-                  <p className="text-xs font-black text-white truncate truncate max-w-[120px]">{user.displayName}</p>
-                  <p className="text-[10px] text-white/30 truncate">{user.email}</p>
+                  <p className="text-[9px] font-black text-white truncate max-w-[100px]">{user.displayName}</p>
                </div>
             </div>
             <button 
               onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-[10px] font-bold uppercase tracking-widest text-white/40 hover:text-white hover:bg-red-500/10 transition-all group/logout"
+              className="w-full flex items-center justify-center gap-1.5 p-1.5 rounded-lg bg-white/[0.02] border border-white/5 text-[8px] font-bold uppercase tracking-widest text-white/30 hover:text-white hover:bg-red-500/10 transition-all group/logout"
             >
-              <LogOut className="w-3.5 h-3.5 group-hover/logout:text-red-400" /> Sign Out
+              <LogOut className="w-2.5 h-2.5 group-hover/logout:text-red-400" /> Sign Out
             </button>
           </div>
         </div>
@@ -678,7 +759,7 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 relative z-10 p-2 sm:p-4 lg:p-8">
         <div className="flex-1 flex flex-col glass rounded-[1.5rem] sm:rounded-[3rem] border-white/[0.03] overflow-hidden relative shadow-2xl">
           {/* Header */}
-          <header className="h-16 sm:h-24 flex items-center justify-between px-6 sm:px-10 border-b border-white/[0.03] shrink-0 relative">
+          <header className="h-12 flex items-center justify-between px-4 border-b border-white/[0.03] shrink-0 relative">
             <div className="flex items-center gap-4 z-10">
               <button 
                 onClick={() => setSidebarOpen(true)}
@@ -687,8 +768,13 @@ export default function App() {
                 <Menu className="w-6 h-6" />
               </button>
               <div className="hidden sm:flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
-                <p className="text-[10px] font-bold text-white tracking-[0.2em] uppercase">Intelligence Node: Active</p>
+                <div className={cn(
+                  "w-2 h-2 rounded-full animate-pulse shadow-lg",
+                  configStatus.hasKey ? "bg-emerald-500 shadow-emerald-500/50" : "bg-red-500 shadow-red-500/50"
+                )} />
+                <p className="text-[10px] font-bold text-white tracking-[0.2em] uppercase">
+                  {configStatus.hasKey ? "Synthesis Engine: Online" : "Synthesis Engine: Error"}
+                </p>
               </div>
             </div>
 
@@ -711,55 +797,69 @@ export default function App() {
           <div className="flex-1 flex flex-col min-w-0 relative overflow-hidden backdrop-blur-xl">
             <div 
               ref={scrollRef}
-              className="flex-1 overflow-y-auto px-4 py-8 sm:px-6 sm:py-12 md:px-20 md:py-16 space-y-12 scrollbar-hide"
+              className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 md:px-10 md:py-8 space-y-6 scrollbar-hide"
             >
-              {messages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto space-y-12 text-center py-12">
-                   <div className="w-24 h-24 rounded-[2.5rem] bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center relative group">
-                      <Sparkles className="w-10 h-10 text-indigo-400 group-hover:scale-125 transition-transform duration-700" />
-                      <div className="absolute inset-0 bg-indigo-400/10 blur-2xl rounded-full opacity-50" />
+              {messages.length === 0 && !streamingContent && !isLoading ? (
+                <div className="h-full flex flex-col items-center justify-center max-w-xl mx-auto space-y-6 text-center py-6">
+                   <div className="w-12 h-12 rounded-[1.2rem] bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center relative group">
+                      <Sparkles className="w-6 h-6 text-indigo-400 group-hover:scale-125 transition-transform duration-700" />
+                      <div className="absolute inset-0 bg-indigo-400/10 blur-xl rounded-full opacity-50" />
                    </div>
-                   <div className="space-y-4">
-                      <h2 className="text-4xl sm:text-5xl font-display font-bold text-white tracking-tight italic">How can I assist <br /> your <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">Intelligence</span> today?</h2>
-                      <p className="text-white/30 text-sm font-medium tracking-wide">Select a query below or initiate a new synthesis session.</p>
+                   <div className="space-y-2">
+                      <h2 className="text-xl sm:text-2xl font-display font-bold text-white tracking-tight italic">How can I assist <br /> your <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">Intelligence</span> today?</h2>
+                      <p className="text-white/30 text-[10px] font-medium tracking-wide">Select a query below or initiate a new synthesis session.</p>
                    </div>
-                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
                       <SuggestionCard 
                         title="Quantum Analysis" 
-                        description="Synthesize potential outcomes for topological data structures" 
+                        description="Synthesize topological data outcomes" 
                         onClick={() => setInput("Synthesize topological data outcomes...")}
                       />
                       <SuggestionCard 
                         title="Strategic Audit" 
-                        description="Audit current neural architecture for efficiency bottlenecks" 
+                        description="Audit neural architecture for bottlenecks" 
                         onClick={() => setInput("Perform strategic neural audit...")}
                       />
                    </div>
                 </div>
               ) : (
-                <div className="max-w-4xl mx-auto w-full space-y-12">
+                <div className="max-w-4xl mx-auto w-full space-y-6 text-xs font-medium leading-relaxed">
                   {messages.map((message, i) => (
                     <MessageBubble key={message.id || i} message={message} />
                   ))}
-                  {isLoading && <LoadingBubble />}
+                  {streamingContent && (
+                    <MessageBubble 
+                      message={{ 
+                        id: streamingContent.id, 
+                        role: 'assistant', 
+                        content: streamingContent.content, 
+                        timestamp: new Date() 
+                      }} 
+                    />
+                  )}
+                  {isLoading && !streamingContent && (
+                    <div className="flex gap-2 p-4 text-white/20 italic animate-pulse text-[10px]">
+                      Synthesizing intelligence...
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
             {/* Input Component */}
-            <div className="px-4 py-6 sm:px-10 sm:py-10 md:px-20 bg-gradient-to-t from-[#030303] via-[#030303]/80 to-transparent">
+            <div className="px-4 py-4 sm:px-8 sm:py-6 md:px-16 bg-gradient-to-t from-[#030303] via-[#030303]/80 to-transparent">
               <div className="max-w-3xl mx-auto relative group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-[1.5rem] sm:rounded-[2.5rem] blur-2xl opacity-10 group-focus-within:opacity-25 transition-all duration-700" />
+                <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-xl sm:rounded-2xl blur-xl opacity-10 group-focus-within:opacity-20 transition-all duration-700" />
                 <form 
                   onSubmit={handleSubmit} 
-                  className="relative flex items-center gap-3 bg-[#0a0a0b]/90 border border-white/10 rounded-[1.5rem] sm:rounded-2xl p-2 sm:p-3 backdrop-blur-3xl focus-within:border-indigo-500/40 transition-all shadow-2xl"
+                  className="relative flex items-center gap-2 bg-[#0a0a0b]/90 border border-white/10 rounded-lg sm:rounded-xl p-1 sm:p-1.5 backdrop-blur-3xl focus-within:border-indigo-500/40 transition-all shadow-2xl"
                 >
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/[0.05] items-center justify-center transition-all group/paper"
+                    className="flex w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white/[0.03] hover:bg-white/10 border border-white/[0.05] items-center justify-center transition-all group/paper"
                   >
-                    <Paperclip className="w-5 h-5 opacity-40 group-hover/paper:opacity-100 group-hover/paper:text-indigo-400 transition-all" />
+                    <Paperclip className="w-4 h-4 opacity-40 group-hover/paper:opacity-100 group-hover/paper:text-indigo-400 transition-all" />
                     <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
                   </button>
                   
@@ -774,13 +874,13 @@ export default function App() {
                         }
                       }}
                       rows={1}
-                      placeholder="Ask Mani anything..."
-                      className="w-full bg-transparent border-none py-3 px-2 sm:px-0 text-sm focus:outline-none focus:ring-0 text-white placeholder:text-white/10 font-bold resize-none min-h-[44px] max-h-48 scrollbar-hide flex items-center"
-                      style={{ height: 'auto', minHeight: '44px' }}
+                      placeholder="Ask Mani..."
+                      className="w-full bg-transparent border-none py-2 px-1.5 sm:px-0 text-[13px] focus:outline-none focus:ring-0 text-white placeholder:text-white/10 font-bold resize-none min-h-[36px] max-h-32 scrollbar-hide flex items-center"
+                      style={{ height: 'auto', minHeight: '36px' }}
                       onInput={(e) => {
                         const target = e.target as HTMLTextAreaElement;
                         target.style.height = 'auto';
-                        target.style.height = `${Math.min(target.scrollHeight, 192)}px`;
+                        target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
                       }}
                     />
                   </div>
@@ -801,9 +901,9 @@ export default function App() {
                     <button 
                       disabled={isLoading || !input.trim()}
                       type="submit" 
-                      className="h-10 sm:h-12 w-10 sm:w-16 rounded-xl bg-white text-black hover:bg-indigo-500 hover:text-white transition-all active:scale-95 disabled:opacity-10 flex items-center justify-center shrink-0 shadow-lg"
+                      className="h-9 sm:h-10 w-10 sm:w-12 rounded-lg bg-white text-black hover:bg-indigo-500 hover:text-white transition-all active:scale-95 disabled:opacity-10 flex items-center justify-center shrink-0 shadow-lg"
                     >
-                      <Send className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <Send className="w-3.5 h-3.5 sm:w-4 h-4" />
                     </button>
                   </div>
                 </form>
@@ -822,25 +922,25 @@ function MessageBubble({ message }: { message: Message }) {
   
   return (
     <motion.div 
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn("flex w-full mb-10 last:mb-0", isUser ? "justify-end" : "justify-start")}
+      className={cn("flex w-full mb-6 last:mb-0", isUser ? "justify-end" : "justify-start")}
     >
-      <div className={cn("max-w-[75%] sm:max-w-[85%] lg:max-w-[80%] flex flex-col gap-3", isUser ? "items-end text-right" : "items-start")}>
-        <div className={cn("flex items-center gap-3 px-2 mb-1", isUser && "flex-row-reverse")}>
+      <div className={cn("max-w-[85%] sm:max-w-[75%] lg:max-w-[70%] flex flex-col gap-1.5", isUser ? "items-end text-right" : "items-start")}>
+        <div className={cn("flex items-center gap-1.5 px-1 mb-0.5", isUser && "flex-row-reverse")}>
            <div className={cn(
-             "w-6 h-6 rounded-lg flex items-center justify-center",
+             "w-5 h-5 rounded-md flex items-center justify-center",
              isUser ? "bg-white/10" : "bg-indigo-500/10"
            )}>
-             {isUser ? <UserIcon className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5 text-indigo-400" />}
+             {isUser ? <UserIcon className="w-3 h-3" /> : <Sparkles className="w-3 h-3 text-indigo-400" />}
            </div>
-           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30">
+           <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30">
              {isUser ? 'Human Subject' : 'Neural Core'}
            </span>
         </div>
 
         <div className={cn(
-          "px-8 py-7 rounded-[2rem] shadow-2xl relative overflow-hidden backdrop-blur-3xl border text-base font-medium leading-relaxed",
+          "px-3 py-2.5 rounded-lg shadow-xl relative overflow-hidden backdrop-blur-3xl border text-[11px] font-medium leading-relaxed",
           isUser 
             ? "bg-white/[0.08] border-white/20 text-white rounded-tr-none" 
             : "bg-[#0B0B0C] border-white/5 text-white/90 rounded-tl-none shadow-black/40"
@@ -856,7 +956,7 @@ function MessageBubble({ message }: { message: Message }) {
                </div>
             </div>
           )}
-          <div className="prose prose-invert prose-indigo max-w-none prose-p:leading-relaxed">
+          <div className="prose prose-sm prose-invert prose-indigo max-w-none prose-p:leading-relaxed text-white/90">
             <div className="markdown-body">
               <ReactMarkdown
                 components={{
@@ -903,15 +1003,15 @@ function CodeBlock({ children, className, ...props }: any) {
   };
 
   return (
-    <div className="relative group/code my-6 border border-white/5 rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-3 bg-white/[0.03] border-b border-white/5">
-        <span className="text-[9px] font-black tracking-[0.3em] text-white/30 uppercase">{match ? match[1] : 'Neural Code'}</span>
+    <div className="relative group/code my-4 border border-white/5 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 bg-white/[0.03] border-b border-white/5">
+        <span className="text-[8px] font-black tracking-[0.3em] text-white/30 uppercase">{match ? match[1] : 'Neural Code'}</span>
         <button onClick={handleCopy} className="text-white/40 hover:text-white transition-all">
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
         </button>
       </div>
-      <pre className="p-6 bg-[#030303] overflow-x-auto scrollbar-hide">
-        <code className="text-xs sm:text-sm font-mono leading-relaxed" {...props}>{children}</code>
+      <pre className="p-4 bg-[#030303] overflow-x-auto scrollbar-hide">
+        <code className="text-[11px] sm:text-xs font-mono leading-relaxed" {...props}>{children}</code>
       </pre>
     </div>
   );
@@ -919,18 +1019,18 @@ function CodeBlock({ children, className, ...props }: any) {
 
 function Logo({ hideVersion = false, onClick }: { hideVersion?: boolean, onClick?: () => void }) {
   return (
-    <div className="flex items-center gap-4 group cursor-pointer select-none" onClick={onClick}>
-      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-600 to-indigo-700 flex items-center justify-center shrink-0 shadow-2xl shadow-indigo-500/40 relative overflow-hidden group-hover:scale-105 transition-transform duration-500">
-        <Sparkles className="w-6 h-6 text-white relative z-10" />
+    <div className="flex items-center gap-2 group cursor-pointer select-none" onClick={onClick}>
+      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 via-violet-600 to-indigo-700 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20 relative overflow-hidden group-hover:scale-105 transition-transform duration-500">
+        <Sparkles className="w-3.5 h-3.5 text-white relative z-10" />
         <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
       <div className="flex flex-col">
-        <span className="font-display text-2xl font-bold tracking-tighter text-white italic" style={{ fontFamily: 'Arial' }}>
+        <span className="font-display text-sm font-bold tracking-tighter text-white italic" style={{ fontFamily: 'Arial' }}>
           Mani AI
         </span>
         {!hideVersion && (
-          <span className="text-[9px] font-black tracking-[0.5em] text-indigo-400 uppercase opacity-50">
-            Enterprise v3
+          <span className="text-[7px] font-black tracking-[0.4em] text-indigo-400 uppercase opacity-50">
+            Enterprise
           </span>
         )}
       </div>
@@ -942,13 +1042,13 @@ function SuggestionCard({ title, description, onClick }: { title: string, descri
   return (
     <button 
       onClick={onClick}
-      className="p-8 rounded-[2rem] bg-white/[0.015] border border-white/5 hover:border-indigo-500/40 hover:bg-white/[0.03] text-left transition-all group relative overflow-hidden"
+      className="p-4 rounded-xl bg-white/[0.015] border border-white/5 hover:border-indigo-500/40 hover:bg-white/[0.03] text-left transition-all group relative overflow-hidden"
     >
-      <div className="absolute top-0 right-0 p-8 opacity-[0.02] group-hover:opacity-[0.08] transition-opacity">
-        <Sparkles className="w-20 h-20" />
+      <div className="absolute top-0 right-0 p-4 opacity-[0.02] group-hover:opacity-[0.08] transition-opacity">
+        <Sparkles className="w-10 h-10" />
       </div>
-      <h4 className="text-[10px] font-black text-indigo-400 mb-2 uppercase tracking-widest">{title}</h4>
-      <p className="text-sm text-white/30 font-medium leading-relaxed group-hover:text-white/60 transition-all">{description}</p>
+      <h4 className="text-[8px] font-black text-indigo-400 mb-1 uppercase tracking-widest">{title}</h4>
+      <p className="text-[11px] text-white/30 font-medium leading-relaxed group-hover:text-white/60 transition-all">{description}</p>
     </button>
   );
 }

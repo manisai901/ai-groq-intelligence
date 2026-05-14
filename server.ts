@@ -6,10 +6,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
@@ -18,41 +14,59 @@ async function startServer() {
 
   // API Route for Groq with Streaming
   app.post("/api/chat", async (req, res) => {
+    console.log("Chat request received");
     try {
+      const apiKey = process.env.GROQ_API_KEY;
+      if (!apiKey) {
+        console.error("GROQ_API_KEY is missing from environment");
+        return res.status(500).json({ error: "GROQ_API_KEY is not configured in Settings > Environment Variables." });
+      }
+      
+      const groqClient = new Groq({ apiKey });
       const { message, history } = req.body;
 
+      if (!message) {
+        return res.status(400).json({ error: "No message provided" });
+      }
+
       // Transform history to Groq format
-      const messages = history.map((h: any) => {
+      const historyMessages = (history || []).map((h: any) => {
+        // Handle various history formats
         const role = (h.role === "model" || h.role === "assistant") ? "assistant" : "user";
-        return {
-          role,
-          content: h.parts?.[0]?.text || h.content || "",
-        };
-      });
+        const content = h.parts?.[0]?.text || h.content || "";
+        return { role, content };
+      }).filter((m: any) => m.content.trim() !== "");
 
-      messages.push({ role: "user", content: message });
+      const messages = [
+        {
+          role: "system" as const,
+          content: "You are Mani AI, a high-performance intelligence assistant. Provide precise, grounded, and helpful responses. Format your output with markdown. Use code blocks for technical content. Keep responses concise as per the compact UI requirements."
+        },
+        ...historyMessages,
+        { role: "user" as const, content: message }
+      ];
 
-      // Ensure history isn't too long to avoid token limits
-      const limitedMessages = messages.slice(-15); 
+      // Limit history to last 10 messages for performance and token safety
+      const finalMessages = messages.slice(-11);
+
+      console.log(`Sending request to Groq with ${finalMessages.length} messages`);
+      console.log(`Last message: "${message}"`);
+      console.log(`Model: llama-3.3-70b-versatile`);
 
       // Set headers for SSE (Server-Sent Events)
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.flushHeaders();
 
-      const stream = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: "You are Mani AI, a high-performance intelligence assistant. Provide precise, grounded, and helpful responses. Format your output with markdown. Use code blocks for technical content."
-          },
-          ...limitedMessages
-        ],
+      console.log("Initiating Groq stream...");
+      const stream = await groqClient.chat.completions.create({
+        messages: finalMessages,
         model: "llama-3.3-70b-versatile",
         temperature: 0.7,
-        max_tokens: 2048,
-        top_p: 1,
-        stream: true, // Enable streaming
+        max_tokens: 1536,
+        stream: true,
       });
 
       for await (const chunk of stream) {
@@ -64,15 +78,26 @@ async function startServer() {
 
       res.write('data: [DONE]\n\n');
       res.end();
+      console.log("Stream completed successfully");
     } catch (error: any) {
-      console.error("Groq API Error:", error);
+      console.error("Groq API Error Detail:", error);
+      const errorMessage = error.message || "Failed to generate response";
+      
       if (!res.headersSent) {
-        res.status(500).json({ error: error.message || "Failed to generate response" });
+        res.status(500).json({ error: errorMessage });
       } else {
-        res.write(`data: ${JSON.stringify({ error: "Stream interrupted" })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
         res.end();
       }
     }
+  });
+
+  // Health check for API Key
+  app.get("/api/check-config", (req, res) => {
+    res.json({ 
+      hasGroqKey: !!process.env.GROQ_API_KEY,
+      envMode: process.env.NODE_ENV || 'development'
+    });
   });
 
   // Vite middleware for development
