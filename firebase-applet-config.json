@@ -1,10 +1,10 @@
 {
-  "projectId": "quadratic-trainer-tsjh2",
-  "appId": "1:532889988767:web:cd86aa18e2fb76f4573caa",
-  "apiKey": "AIzaSyCt44Sk0H2QSdfVREUN7VHXDGzE6PAet3U",
-  "authDomain": "quadratic-trainer-tsjh2.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-0342d194-c949-4154-a10c-a2c6f171222c",
-  "storageBucket": "quadratic-trainer-tsjh2.firebasestorage.app",
-  "messagingSenderId": "532889988767",
-  "measurementId": ""
+  "apiKey": "AIzaSyCKpx7n5aC5LQ8viZWD56E7FYZWVQ_jJXw",
+  "authDomain": "ai-groq-intelligence-mani.firebaseapp.com",
+  "projectId": "ai-groq-intelligence-mani",
+  "storageBucket": "ai-groq-intelligence-mani.firebasestorage.app",
+  "messagingSenderId": "731553523898",
+  "appId": "1:731553523898:web:23d97110c6b8d9cc793a83",
+  "measurementId": "G-N3LJGZL959",
+  "firestoreDatabaseId": "(default)"
 }
