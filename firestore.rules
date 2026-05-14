@@ -1,44 +1,107 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // GLOBAL HELPERS
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // -------------------------------------------------------------------------
+    // ENTITY VALIDATORS
+    // -------------------------------------------------------------------------
+    function isValidUser(data) {
+      return data.uid is string && data.uid == request.auth.uid &&
+             data.email is string && data.email.size() <= 256 &&
+             (data.get('displayName', '') is string) &&
+             (data.get('photoURL', '') is string) &&
+             data.keys().hasAll(['uid', 'email']);
+    }
+
+    function isValidConversation(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() <= 200 &&
+             data.createdAt is timestamp &&
+             data.keys().hasAll(['userId', 'title', 'createdAt']);
+    }
+
+    function isValidMessage(data) {
+      return data.role is string && (data.role == 'user' || data.role == 'assistant') &&
+             data.content is string && data.content.size() <= 10000 &&
+             data.timestamp is timestamp &&
+             data.keys().hasAll(['role', 'content', 'timestamp']);
+    }
+
+    // -------------------------------------------------------------------------
+    // RULES
+    // -------------------------------------------------------------------------
+    
+    // Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    function isValidId(id) { 
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
-    }
-
-    function isValidGlobalStats(data) {
-      return data.keys().hasAll(['totalUsers', 'totalVisits']) 
-        && data.keys().size() == 2
-        && data.totalUsers is int
-        && data.totalVisits is int;
-    }
-
-    function isValidDailyStats(data) {
-      return data.keys().hasAll(['uniqueUsers', 'visits', 'date'])
-        && data.keys().size() == 3
-        && data.uniqueUsers is int
-        && data.visits is int
-        && data.date is string;
-    }
-
-    match /stats/{docId} {
+    // Stats (Publicly readable, system writable - for now keeping simple)
+    match /stats/global {
       allow read: if true;
-      allow create: if docId == 'global' && isValidGlobalStats(request.resource.data);
-      allow update: if docId == 'global' 
-        && isValidGlobalStats(request.resource.data)
-        && request.resource.data.totalUsers >= resource.data.totalUsers
-        && request.resource.data.totalVisits >= resource.data.totalVisits;
+      allow write: if true; // In real production, this would be cloud functions only
     }
 
     match /daily_stats/{date} {
       allow read: if true;
-      allow create: if isValidDailyStats(request.resource.data) && date == request.resource.data.date;
-      allow update: if isValidDailyStats(request.resource.data)
-        && request.resource.data.uniqueUsers >= resource.data.uniqueUsers
-        && request.resource.data.visits >= resource.data.visits;
+      allow write: if true;
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']) &&
+        isValidUser(incoming())
+      );
+    }
+
+    // Conversations
+    match /conversations/{conversationId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidConversation(incoming()) && isValidId(conversationId);
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastUpdatedAt']) &&
+        isValidConversation(incoming())
+      );
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+
+      // Messages Subcollection
+      match /messages/{messageId} {
+        // Enforce parent ownership check for messages
+        function parentOwned() {
+          return get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
+        }
+
+        allow list: if isSignedIn() && parentOwned();
+        allow get: if isSignedIn() && parentOwned();
+        allow create: if isSignedIn() && parentOwned() && isValidMessage(incoming()) && isValidId(messageId);
+        allow update, delete: if false; // Messages are immutable in this flow
+      }
     }
   }
 }

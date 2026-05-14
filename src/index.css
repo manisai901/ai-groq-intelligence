@@ -42,30 +42,39 @@
 }
 
 .stardust-overlay {
-  background-image: url('https://www.transparenttextures.com/patterns/stardust.png');
-  @apply fixed inset-0 opacity-[0.02] pointer-events-none z-[1];
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 1;
 }
 
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
+.glow-indigo { 
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, transparent 70%); 
 }
 
-@keyframes float {
-  0% { transform: translateY(0px) rotate(0deg); }
-  50% { transform: translateY(-20px) rotate(1deg); }
-  100% { transform: translateY(0px) rotate(0deg); }
+.glow-violet { 
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%); 
+}
+
+.glass-premium { 
+  backdrop-filter: blur(40px); 
+  background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)); 
+}
+
+.sidebar-glass { 
+  backdrop-filter: blur(60px); 
+  background: rgba(3,3,3,0.8); 
+  border-right: 1px solid rgba(255,255,255,0.03); 
 }
 
 @keyframes pulse-slow {
   0%, 100% { opacity: 0.3; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.05); }
+  50% { opacity: 0.5; transform: scale(1.05); }
 }
 
-.animate-float {
-  animation: float 20s ease-in-out infinite;
-}
-
-.animate-pulse-slow {
-  animation: pulse-slow 15s ease-in-out infinite;
+.animate-pulse-slow { 
+  animation: pulse-slow 12s ease-in-out infinite; 
 }
 

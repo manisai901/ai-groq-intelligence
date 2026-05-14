@@ -1,6 +1,6 @@
 {
-  "name": "Mani AI Intelligence",
-  "description": "A high-performance intelligence assistant powered by Groq Llama 3.3 for near-instant responses. Built by Mani.",
+  "name": "Mani AI SaaS v3",
+  "description": "Premium Full-Stack AI Workspace powered by Groq Llama 3.3 and Firebase. Features secure authentication, persistent chat history, and document analysis.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

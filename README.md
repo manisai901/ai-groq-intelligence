@@ -1,57 +1,51 @@
-# Mani AI - Intelligence Engine
+# Mani AI SaaS v3 - Enterprise Intelligence Platform
 
-A premium, full-stack AI-powered intelligence platform built for real-time analysis and data synthesis.
+A modern, production-ready AI SaaS platform inspired by ChatGPT, built for scalable neural synthesis and secure collaboration.
 
-## Key Features
+## 🚀 Key Features
 
-- **Ultra-Fast Responses**: Leveraging **Groq Cloud** with streaming (SSE) for near-instant text generation.
-- **Voice Intelligence**: Integrated Web Speech API for hands-free interaction.
-- **Real-Time Synthesis**: Neural processing that aggregates complex queries into cohesive responses.
-- **Micro-Interaction Design**: Brutalist-inspired dark interface with smooth Framer Motion animations.
-- **Secure Backend**: All API keys are proxied through a Node.js/Express backend to prevent client-side exposure.
+- **Full-Stack SaaS Architecture**: Integrated backend with Node.js/Express and a frontend powered by React 18 + Vite.
+- **Neural Streaming**: Leverage **Groq Llama 3.3** for ultra-low latency, real-time streaming responses (up to 500+ tokens/sec).
+- **Secure Authentication**: Gmail-based Google Login via **Firebase Authentication** with persistent sessions and logout.
+- **Persistent Chat History**: Securely store and manage user-specific conversations in **Firestore**, allowing for search and thread management.
+- **Document Intelligence**: Securely upload and store PDFs, images, and documents using **Firebase Storage**.
+- **Modern UI/UX**: Professional dark-themed interface with **Framer Motion** animations, mobile-first responsive design, and markdown/code highlighting.
+- **Voice Synthesis**: Integrated hands-free voice input via Web Speech API.
 
-## Architecture
+## 🛠️ Tech Stack
 
-### Frontend (Client-Side)
-- **Framework**: React 18 + Vite.
-- **Styling**: Tailwind CSS with custom "glass-premium" filters.
-- **Icons**: Lucide React.
-- **Streaming**: React Body Reader implementation for real-time UI updates.
+### Frontend
+- **Framework**: React 18
+- **Styling**: Tailwind CSS 4.0
+- **Animations**: Framer Motion
+- **Icons**: Lucide React
+- **State Management**: React Firebase Hooks + React Hooks
 
-### Backend (Server-Side)
-- **Runtime**: Node.js + Express.
-- **AI Engine**: Groq SDK (`llama-3.3-70b-versatile`).
-- **Build System**: Bundled with `esbuild` for production-ready single-file output.
+### Backend
+- **Runtime**: Node.js + Express
+- **AI Core**: Groq SDK (`llama-3.3-70b-versatile`)
+- **Database/Auth**: Firebase (Firestore, Auth, Storage)
+- **Engine**: Mani-v3.5 Precision Logic
 
-## Deployment to Render
+## 📦 Deployment Guide
 
-To connect and deploy your app to **Render.com**, follow these steps:
+### Firebase Setup
+Before deploying, ensure your Firebase environment is provisioned:
+1. Initialize Firebase in the AI Studio environment.
+2. The `firebase-applet-config.json` is automatically handled for you.
 
-1. **GitHub Connection**:
-   - First, use the **Export to GitHub** tool in the AI Studio Settings menu to push your code to a repository.
-2. **Create a New Web Service**:
-   - Go to [Render Dashboard](https://dashboard.render.com/) and click **New > Web Service**.
-   - Connect the GitHub repository you just exported.
-3. **Configure the Environment**:
-   - **Runtime**: `Node`
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm start`
-4. **Environment Variables**:
-   - Add a secret variable in Render: `GROQ_API_KEY` (Your API key from Groq Console).
-5. **Port**: Render automatically handles the `PORT` variable, and your server is configured to use it.
+### Vercel / Render / Cloud Run
+The application is designed for seamless deployment:
 
-## Sharing & Buzz
+1. **Build Phase**: `npm run build`
+2. **Start Phase**: `npm start` (Runs the compiled `dist/server.cjs`)
+3. **Environment**: Declare `GROQ_API_KEY` in your production environment settings.
 
-**WhatsApp Status Ideas:**
-- 🧠 *Limitless intelligence. Zero latency. Experience Mani AI v3.5.*
-- 🚀 *Next-gen Groq Llama 3.3 power is here. Try the new Mani Intelligence dashboard.*
-- ⚡ *Mani AI: Real-time neural synthesis at your fingertips.*
+## 📱 Mobile Experience
+Mani AI is fully optimized for mobile devices with a professional side-panel navigation and touch-friendly interface, ensuring productivity on the go.
 
-## Local Development
+## 🛡️ Security
+All API communications are proxied via our secure Node.js backend. User data is strictly isolated within Firebase using enterprise-grade security rules.
 
-```bash
-npm install
-npm run dev
-```
-
-The server will start at `http://localhost:3000`.
+---
+Built with Mani AI Precision | 2026

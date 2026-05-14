@@ -22,12 +22,18 @@ async function startServer() {
       const { message, history } = req.body;
 
       // Transform history to Groq format
-      const messages = history.map((h: any) => ({
-        role: h.role === "model" ? "assistant" : "user",
-        content: h.parts?.[0]?.text || "",
-      }));
+      const messages = history.map((h: any) => {
+        const role = (h.role === "model" || h.role === "assistant") ? "assistant" : "user";
+        return {
+          role,
+          content: h.parts?.[0]?.text || h.content || "",
+        };
+      });
 
       messages.push({ role: "user", content: message });
+
+      // Ensure history isn't too long to avoid token limits
+      const limitedMessages = messages.slice(-15); 
 
       // Set headers for SSE (Server-Sent Events)
       res.setHeader('Content-Type', 'text/event-stream');
@@ -38,9 +44,9 @@ async function startServer() {
         messages: [
           {
             role: "system",
-            content: "You are Mani AI, a high-performance intelligence assistant. Provide precise, grounded, and helpful responses."
+            content: "You are Mani AI, a high-performance intelligence assistant. Provide precise, grounded, and helpful responses. Format your output with markdown. Use code blocks for technical content."
           },
-          ...messages
+          ...limitedMessages
         ],
         model: "llama-3.3-70b-versatile",
         temperature: 0.7,
