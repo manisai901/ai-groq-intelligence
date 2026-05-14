@@ -618,31 +618,25 @@ export default function App() {
         <div className="p-6 mt-auto space-y-4">
           <div 
             onClick={() => setShowSupportMail(!showSupportMail)}
-            className="px-4 py-3 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-all"
+            className="flex items-center justify-center p-4 rounded-2xl bg-white/[0.02] border border-white/5 group cursor-pointer hover:bg-white/5 transition-all relative"
           >
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                "p-2 rounded-lg transition-all",
-                showSupportMail ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-white/40 group-hover:text-emerald-400"
-              )}>
-                <LifeBuoy className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Support</p>
-                <AnimatePresence mode="wait">
-                  {showSupportMail ? (
-                    <motion.p 
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-[11px] font-semibold text-white/70"
-                    >
-                      manikantasaivootla@gmail.com
-                    </motion.p>
-                  ) : (
-                    <p className="text-[11px] font-semibold text-white/20">Click to reveal mail</p>
-                  )}
-                </AnimatePresence>
-              </div>
+            <div className={cn(
+              "p-3 rounded-xl transition-all flex items-center gap-3",
+              showSupportMail ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-white/40 group-hover:text-emerald-400"
+            )}>
+              <LifeBuoy className="w-5 h-5" />
+              <AnimatePresence>
+                {showSupportMail && (
+                  <motion.div
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    className="overflow-hidden whitespace-nowrap"
+                  >
+                    <p className="text-[11px] font-bold tracking-tight">manikantasaivootla@gmail.com</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
@@ -764,7 +758,7 @@ export default function App() {
                         }
                       }}
                       rows={1}
-                      placeholder="Ask Mani anything..."
+                      placeholder="Neural query interface.."
                       className="w-full bg-transparent border-none py-3 px-2 sm:px-0 text-sm focus:outline-none focus:ring-0 text-white placeholder:text-white/10 font-bold resize-none min-h-[44px] max-h-48 scrollbar-hide flex items-center"
                       style={{ height: 'auto', minHeight: '44px' }}
                       onInput={(e) => {
