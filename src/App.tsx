@@ -120,9 +120,12 @@ export default function App() {
       const user = result.user;
       
       const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
+      const userSnap = await getDoc(userRef).catch(err => {
+        handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
+        return null;
+      });
 
-      if (!userSnap.exists()) {
+      if (userSnap && !userSnap.exists()) {
         await setDoc(userRef, {
           uid: user.uid,
           email: user.email,
@@ -130,16 +133,19 @@ export default function App() {
           photoURL: user.photoURL,
           createdAt: serverTimestamp(),
           lastLoginAt: serverTimestamp()
-        });
-      } else {
+        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}`));
+      } else if (userSnap) {
         await updateDoc(userRef, {
           displayName: user.displayName,
           photoURL: user.photoURL,
           lastLoginAt: serverTimestamp()
-        });
+        }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login Error:", error);
+      if (error.code === 'auth/unauthorized-domain') {
+        alert("Domain Not Authorized: Please add this domain to Authorized Domains in Firebase Authentication Settings.");
+      }
     }
   };
 
@@ -851,19 +857,21 @@ function MessageBubble({ message }: { message: Message }) {
             </div>
           )}
           <div className="prose prose-invert prose-indigo max-w-none prose-p:leading-relaxed">
-            <ReactMarkdown
-              components={{
-                code({ node, inline, className, children, ...props }: any) {
-                  return !inline ? (
-                    <CodeBlock className={className} {...props}>{children}</CodeBlock>
-                  ) : (
-                    <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-indigo-300" {...props}>{children}</code>
-                  )
-                }
-              }}
-            >
-              {message.content}
-            </ReactMarkdown>
+            <div className="markdown-body">
+              <ReactMarkdown
+                components={{
+                  code({ node, inline, className, children, ...props }: any) {
+                    return !inline ? (
+                      <CodeBlock className={className} {...props}>{children}</CodeBlock>
+                    ) : (
+                      <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-indigo-300" {...props}>{children}</code>
+                    )
+                  }
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       </div>
