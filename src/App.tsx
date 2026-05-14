@@ -119,15 +119,25 @@ export default function App() {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
       
-      // Upsert user profile
       const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        createdAt: serverTimestamp()
-      }, { merge: true });
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        await setDoc(userRef, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          createdAt: serverTimestamp(),
+          lastLoginAt: serverTimestamp()
+        });
+      } else {
+        await updateDoc(userRef, {
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          lastLoginAt: serverTimestamp()
+        });
+      }
     } catch (error) {
       console.error("Login Error:", error);
     }

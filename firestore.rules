@@ -32,6 +32,8 @@ service cloud.firestore {
              data.email is string && data.email.size() <= 256 &&
              (data.get('displayName', '') is string) &&
              (data.get('photoURL', '') is string) &&
+             (data.get('createdAt', request.time) is timestamp) &&
+             (data.get('lastLoginAt', request.time) is timestamp) &&
              data.keys().hasAll(['uid', 'email']);
     }
 
@@ -74,7 +76,7 @@ service cloud.firestore {
       allow get: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if isOwner(userId) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'lastLoginAt']) &&
         isValidUser(incoming())
       );
     }
