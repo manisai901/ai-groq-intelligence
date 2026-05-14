@@ -263,17 +263,19 @@ export default function App() {
     return t2 - t1; // desc
   }) || [];
 
-  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
 
   // Auto-select first conversation if available
   useEffect(() => {
-    if (user && !activeConversationId && conversations.length > 0 && !loadingConversations && !initialLoadDone) {
-      setActiveConversationId(conversations[0].id);
-      setInitialLoadDone(true);
-    } else if (user && !loadingConversations && !initialLoadDone) {
-      setInitialLoadDone(true);
+    if (user && user.uid !== loadedUserId && !loadingConversations) {
+      if (conversations.length > 0) {
+        setActiveConversationId(conversations[0].id);
+      } else {
+        setActiveConversationId(null);
+      }
+      setLoadedUserId(user.uid);
     }
-  }, [user, activeConversationId, conversations, loadingConversations, initialLoadDone]);
+  }, [user, conversations, loadingConversations, loadedUserId]);
 
   // Fetch messages when activeConversationId changes
   useEffect(() => {
@@ -308,7 +310,7 @@ export default function App() {
       });
       
       // Sort client-side to be absolutely certain
-      msgs.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      msgs.sort((a, b) => (a.timestamp as any).getTime() - (b.timestamp as any).getTime());
       
       setMessages(msgs);
     }, (error) => {
@@ -617,6 +619,12 @@ export default function App() {
     <div className="relative flex h-screen w-full bg-[#030303] overflow-hidden font-sans text-[#F0F0F0] selection:bg-violet-500/30">
       <div className="stardust-overlay" />
       
+      {convError && (
+        <div className="absolute top-0 inset-x-0 bg-red-500/20 text-red-100 p-2 text-xs z-50 text-center font-mono">
+          Sidebar Data Link Error: {convError.message}
+        </div>
+      )}
+
       {/* Dynamic Background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute top-[-10%] left-[-10%] w-[70%] h-[70%] glow-indigo animate-pulse-slow mix-blend-screen opacity-10 sm:opacity-40" />

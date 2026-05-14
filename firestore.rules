@@ -83,8 +83,7 @@ service cloud.firestore {
 
     // Conversations
     match /conversations/{conversationId} {
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && isValidConversation(incoming()) && isValidId(conversationId);
       allow update: if isSignedIn() && existing().userId == request.auth.uid && (
         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastUpdatedAt']) &&
