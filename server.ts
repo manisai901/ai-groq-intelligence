@@ -19,7 +19,9 @@ async function startServer() {
       const apiKey = process.env.GROQ_API_KEY;
       if (!apiKey) {
         console.error("GROQ_API_KEY is missing from environment");
-        return res.status(500).json({ error: "GROQ_API_KEY is not configured in Settings > Environment Variables." });
+        return res.status(500).json({ 
+          error: "Synthesis unavailable. Please configure 'GROQ_API_KEY' in the Settings > Environment Variables menu." 
+        });
       }
       
       const groqClient = new Groq({ apiKey });
@@ -54,35 +56,43 @@ async function startServer() {
       const finalMessages = [systemMessage, ...recentMessages];
 
       console.log(`Sending request to Groq with ${finalMessages.length} messages`);
-      console.log(`Last message: "${message}"`);
+      console.log(`Last message: "${message.slice(0, 50)}..."`);
       console.log(`Model: llama-3.3-70b-versatile`);
 
-      // Set headers for SSE (Server-Sent Events)
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Set headers for SSE immediately
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Content-Type-Options': 'nosniff'
+      });
       res.flushHeaders();
 
-      console.log("Initiating Groq stream...");
+      console.log("Creating Groq chat completion...");
       const stream = await groqClient.chat.completions.create({
         messages: finalMessages,
         model: "llama-3.3-70b-versatile",
         temperature: 0.7,
-        max_tokens: 1536,
+        max_tokens: 2048,
         stream: true,
       });
 
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
+      console.log("Groq stream initialized, sending chunks...");
+      try {
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || "";
+          if (content) {
+            res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
+          }
         }
+      } catch (streamError: any) {
+        console.error("Streaming error:", streamError);
+        res.write(`data: ${JSON.stringify({ error: "Stream interrupted" })}\n\n`);
       }
 
       res.write('data: [DONE]\n\n');
       res.end();
-      console.log("Stream completed successfully");
+
     } catch (error: any) {
       console.error("Groq API Error Detail:", error);
       const errorMessage = error.message || "Failed to generate response";

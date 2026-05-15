@@ -3,55 +3,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Search, 
-  Send, 
-  Database, 
-  Globe, 
-  BarChart3, 
-  ArrowUpRight, 
-  Sparkles,
-  Layers,
-  History,
-  MessageSquare,
-  TrendingUp,
-  ExternalLink,
-  ChevronRight,
-  Info,
-  Menu,
-  X,
-  Mail,
-  Mic,
-  MicOff,
-  Users,
-  Eye,
-  Activity,
-  Cpu,
-  Network,
-  Copy,
-  Check,
-  FileText,
-  Map,
-  Plus,
-  Trash2,
-  LogOut,
-  User as UserIcon,
-  Paperclip,
-  Loader2,
-  ShieldCheck,
-  Pencil,
-  LifeBuoy
+  Plus, 
+  Trash2, 
+  LogOut, 
+  Menu, 
+  X, 
+  Mail, 
+  MessageSquare, 
+  History, 
+  Sparkles, 
+  ShieldCheck, 
+  Pencil, 
+  LifeBuoy,
+  Loader2
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import { cn } from './lib/utils';
 import { 
   doc, 
   getDoc, 
   setDoc, 
   updateDoc, 
-  increment, 
   onSnapshot, 
   collection, 
   query, 
@@ -60,13 +34,20 @@ import {
   addDoc, 
   serverTimestamp, 
   deleteDoc,
-  Timestamp
+  Timestamp,
+  limit
 } from 'firebase/firestore';
 import { signInWithPopup, signOut } from 'firebase/auth';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, googleProvider, storage, handleFirestoreError, OperationType } from './lib/firebase';
+
+// Components
+import { MessageBubble } from './components/MessageBubble';
+import { ChatInput } from './components/ChatInput';
+import { Logo } from './components/Logo';
+import { SuggestionCard } from './components/SuggestionCard';
 
 // Declare SpeechRecognition types for TS
 declare global {
@@ -77,7 +58,7 @@ declare global {
 }
 
 // Types
-interface Message {
+export interface Message {
   id?: string;
   role: 'user' | 'assistant';
   content: string;
@@ -102,15 +83,16 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [stats, setStats] = useState({ totalUsers: 0, totalVisits: 0, dailyUsers: 0 });
   const [currentTime, setCurrentTime] = useState(new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   
   const [showSupportMail, setShowSupportMail] = useState(false);
   const [streamingContent, setStreamingContent] = useState<{ id: string, content: string } | null>(null);
-  const [isConfigMode, setIsConfigMode] = useState(false);
   const [configStatus, setConfigStatus] = useState<{ hasKey: boolean, checked: boolean }>({ hasKey: false, checked: false });
+
+  // Stream reader ref to allow cleanup
+  const activeReaderRef = useRef<ReadableStreamDefaultReader | null>(null);
 
   // Check config on mount
   useEffect(() => {
@@ -171,73 +153,12 @@ export default function App() {
 
   const handleLogout = () => signOut(auth);
 
-  // Stats logic (legacy but kept as requested)
+  // Auto-scroll logic
   useEffect(() => {
-    if (!db) return;
-    const trackActivity = async () => {
-      const today = new Date().toISOString().split('T')[0];
-      const visitorId = localStorage.getItem('visitor_id');
-      const lastVisitDate = localStorage.getItem('last_visit_date');
-      const isNewVisitor = !visitorId;
-      const isNewDay = lastVisitDate !== today;
-
-      let currentId = visitorId;
-      if (isNewVisitor) {
-        currentId = Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('visitor_id', currentId!);
-      }
-      localStorage.setItem('last_visit_date', today);
-
-      const globalRef = doc(db, 'stats', 'global');
-      const dailyRef = doc(db, 'daily_stats', today);
-
-      try {
-        const globalSnap = await getDoc(globalRef).catch(() => null);
-        if (globalSnap && !globalSnap.exists()) {
-          await setDoc(globalRef, { totalUsers: 1, totalVisits: 1 });
-        } else if (globalSnap) {
-          await updateDoc(globalRef, {
-            totalVisits: increment(1),
-            totalUsers: isNewVisitor ? increment(1) : increment(0)
-          });
-        }
-      } catch (err) {}
-
-      try {
-        const dailySnap = await getDoc(dailyRef).catch(() => null);
-        if (dailySnap && !dailySnap.exists()) {
-          await setDoc(dailyRef, { uniqueUsers: 1, visits: 1, date: today });
-        } else if (dailySnap) {
-          await updateDoc(dailyRef, {
-            visits: increment(1),
-            uniqueUsers: isNewDay ? increment(1) : increment(0)
-          });
-        }
-      } catch (err) {}
-    };
-
-    trackActivity();
-
-    const unsubGlobal = onSnapshot(doc(db, 'stats', 'global'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setStats(prev => ({ ...prev, totalUsers: data.totalUsers, totalVisits: data.totalVisits }));
-      }
-    });
-
-    const todayString = new Date().toISOString().split('T')[0];
-    const unsubDaily = onSnapshot(doc(db, 'daily_stats', todayString), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setStats(prev => ({ ...prev, dailyUsers: data.uniqueUsers }));
-      }
-    });
-
-    return () => {
-      unsubGlobal();
-      unsubDaily();
-    };
-  }, []);
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, streamingContent, isLoading]);
 
   // Fetch conversations for current user
   const [conversationsSnapshot, loadingConversations, convError] = useCollection(
@@ -389,12 +310,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isLoading]);
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user || !activeConversationId) return;
@@ -411,7 +326,8 @@ export default function App() {
         content: `Uploaded file: ${file.name}`,
         fileUrl: url,
         fileName: file.name,
-        timestamp: serverTimestamp()
+        timestamp: serverTimestamp(),
+        userId: user.uid
       });
 
       // Update conversation title if it's the first message
@@ -459,132 +375,140 @@ export default function App() {
       }
     }
 
+    const MAX_CHARS = 1000;
+    const charCount = input.length;
+    const isOverLimit = charCount > MAX_CHARS;
+
+    const inputBody = JSON.stringify({
+      message: userMessage,
+      history: messages.slice(-6).map(m => ({ // Lightweight history slice
+        role: m.role,
+        content: m.content
+      }))
+    });
+
     try {
-      // 1. Add user message locally for instant feedback
+      // 1. Instant UI update
       const localUserMsg: Message = {
         id: 'temp-user-' + Date.now(),
         role: 'user',
         content: userMessage,
         timestamp: new Date()
       };
-      
       setMessages(prev => [...prev, localUserMsg]);
 
-      // 2. Save user message to Firestore
-      try {
-        await addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
-          role: 'user',
-          content: userMessage,
-          timestamp: serverTimestamp()
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `conversations/${currentConvId}/messages`);
+      // Cancel any active stream
+      if (activeReaderRef.current) {
+        try { activeReaderRef.current.cancel(); } catch(e) {}
       }
 
-      console.log("Calling backend synthesis...");
-      // 3. Call backend for streaming response
+      // 2. Initiate Fetch with AbortController
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
-
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
-        body: JSON.stringify({
-          message: userMessage,
-          history: messages.map(m => ({
-            role: m.role,
-            content: m.content
-          }))
-        })
+        body: inputBody
       });
       
-      clearTimeout(timeoutId);
+      if (!response.ok) throw new Error(`Status: ${response.status}`);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server Error (${response.status})`);
-      }
-      
-      const tempId = 'streaming-' + Date.now();
-      setStreamingContent({ id: tempId, content: '_Neural synthesis in progress..._' });
+      setStreamingContent({ id: 'streaming', content: '' });
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No signal channel.");
+      activeReaderRef.current = reader;
 
       let assistantText = '';
       const decoder = new TextDecoder();
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response reader available");
-
       let buffer = '';
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        
+        // Split by double newline to handle SSE data properly
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('data: ')) {
-            const data = trimmed.slice(6);
-            if (data === '[DONE]') break;
-            
-            let parsed;
-            try {
-              parsed = JSON.parse(data);
-            } catch (e) {
-              continue;
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line || !line.startsWith('data: ')) continue;
+          
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]') {
+            buffer = ''; // Clear trailing buffer if done
+            break;
+          }
+          
+          try {
+            const data = JSON.parse(raw);
+            if (data.text) {
+              assistantText += data.text;
+              setStreamingContent({ id: 'streaming', content: assistantText });
+            } else if (data.error) {
+              throw new Error(data.error);
             }
-            
-            if (parsed.error) throw new Error(parsed.error);
-            if (parsed.text) {
-              if (assistantText === '') assistantText = parsed.text;
-              else assistantText += parsed.text;
-              setStreamingContent({ id: tempId, content: assistantText });
-            }
+          } catch (e) {
+            // Ignore parse errors for malformed chunks
           }
         }
       }
       
+      activeReaderRef.current = null;
       setStreamingContent(null);
+      setIsLoading(false);
 
-      // 4. Save full assistant message to Firestore
       if (assistantText.trim()) {
-        try {
-          await addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
+        const finalAssistantMsg: Message = {
+          id: 'assist-' + Date.now(),
+          role: 'assistant',
+          content: assistantText,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, finalAssistantMsg]);
+
+        // Background persistence - Atomically
+        const batch = [
+          addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
+            role: 'user',
+            content: userMessage,
+            timestamp: serverTimestamp(),
+            userId: user.uid
+          }),
+          addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
             role: 'assistant',
             content: assistantText,
-            timestamp: serverTimestamp()
-          });
-        } catch (err) {
-          handleFirestoreError(err, OperationType.CREATE, `conversations/${currentConvId}/messages`);
-        }
-      }
-
-      // Update conversation metadata
-      try {
-        await updateDoc(doc(db, 'conversations', currentConvId), {
-          lastUpdatedAt: serverTimestamp()
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `conversations/${currentConvId}`);
+            timestamp: serverTimestamp(),
+            userId: user.uid
+          }),
+          updateDoc(doc(db, 'conversations', currentConvId), {
+            lastUpdatedAt: serverTimestamp()
+          })
+        ];
+        
+        Promise.all(batch).catch(e => console.warn("Persistence lag:", e));
       }
 
     } catch (error: any) {
-      console.error(error);
-      const errorMsg = error.message || "Synthesis failed. Please verify your Groq API Key in the Settings menu.";
-      
+      if (error.name === 'AbortError') return;
+      console.error("Chat Error:", error);
       setMessages(prev => [...prev, {
-        id: 'error-' + Date.now(),
+        id: 'err-' + Date.now(),
         role: 'assistant',
-        content: `**SYSTEM ALERT:** ${errorMsg}`,
+        content: `**System Error:** ${error.message || "Connection lost"}`,
         timestamp: new Date()
       }]);
     } finally {
       setIsLoading(false);
       setStreamingContent(null);
+      activeReaderRef.current = null;
     }
   };
+
+  const handleClearInput = () => setInput('');
 
   if (authLoading) {
     return (
@@ -597,10 +521,8 @@ export default function App() {
   if (!user) {
     return (
       <div className="relative flex h-screen w-full bg-[#030303] items-center justify-center p-4 overflow-hidden">
-        <div className="stardust-overlay" />
-        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-          <div className="absolute top-[-10%] left-[-10%] w-[70%] h-[70%] glow-indigo animate-pulse-slow mix-blend-screen opacity-40" />
-          <div className="absolute bottom-[-10%] right-[-5%] w-[60%] h-[60%] glow-violet animate-pulse-slow mix-blend-screen opacity-30" />
+        <div className="fixed inset-0 pointer-events-none z-0">
+          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(79,70,229,0.1),transparent_70%)]" />
         </div>
         
         <motion.div 
@@ -631,20 +553,19 @@ export default function App() {
   }
 
   return (
-    <div className="relative flex h-screen w-full bg-[#030303] overflow-hidden font-sans text-[#F0F0F0] selection:bg-violet-500/30">
-      <div className="stardust-overlay" />
+    <div className="relative flex h-screen w-full bg-[#030303] overflow-hidden font-sans text-white/90 selection:bg-indigo-500/30">
       
+      {/* Background */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(79,70,229,0.03),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_80%,rgba(139,92,246,0.03),transparent_50%)]" />
+      </div>
+
       {convError && (
         <div className="absolute top-0 inset-x-0 bg-red-500/20 text-red-100 p-2 text-xs z-50 text-center font-mono">
           Sidebar Data Link Error: {convError.message}
         </div>
       )}
-
-      {/* Dynamic Background */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[70%] h-[70%] glow-indigo animate-pulse-slow mix-blend-screen opacity-10 sm:opacity-40" />
-        <div className="absolute bottom-[-10%] right-[-5%] w-[60%] h-[60%] glow-violet animate-pulse-slow mix-blend-screen opacity-10 sm:opacity-30" style={{ animationDelay: '3s' }} />
-      </div>
 
       {/* Sidebar Backdrop */}
       <AnimatePresence>
@@ -804,7 +725,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Experience */}
+      {/* Chat Workspace */}
       <main className="flex-1 flex flex-col min-w-0 relative z-10 p-2 sm:p-4 lg:p-8">
         <div className="flex-1 flex flex-col glass rounded-[1.5rem] sm:rounded-[3rem] border-white/[0.03] overflow-hidden relative shadow-2xl">
           {/* Header */}
@@ -842,8 +763,8 @@ export default function App() {
             </div>
           </header>
 
-          {/* Chat Workspace */}
-          <div className="flex-1 flex flex-col min-w-0 relative overflow-hidden backdrop-blur-xl">
+          {/* Messages Area */}
+          <div className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
             <div 
               ref={scrollRef}
               className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 md:px-10 md:py-8 space-y-6 scrollbar-hide"
@@ -872,7 +793,7 @@ export default function App() {
                    </div>
                 </div>
               ) : (
-                <div className="max-w-4xl mx-auto w-full space-y-6 text-xs font-medium leading-relaxed">
+                <div className="max-w-4xl mx-auto w-full space-y-6">
                   {messages.map((message, i) => (
                     <MessageBubble key={message.id || i} message={message} />
                   ))}
@@ -887,8 +808,10 @@ export default function App() {
                     />
                   )}
                   {isLoading && !streamingContent && (
-                    <div className="flex gap-2 p-4 text-white/20 italic animate-pulse text-[10px]">
-                      Synthesizing intelligence...
+                    <div className="flex items-center gap-2 p-4 text-white/20">
+                      <div className="w-1 h-1 rounded-full bg-indigo-500 animate-bounce" />
+                      <div className="w-1 h-1 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.2s]" />
+                      <div className="w-1 h-1 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.4s]" />
                     </div>
                   )}
                 </div>
@@ -896,208 +819,19 @@ export default function App() {
             </div>
 
             {/* Input Component */}
-            <div className="px-4 py-4 sm:px-8 sm:py-6 md:px-16 bg-gradient-to-t from-[#030303] via-[#030303]/80 to-transparent">
-              <div className="max-w-3xl mx-auto relative group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-xl sm:rounded-2xl blur-xl opacity-10 group-focus-within:opacity-20 transition-all duration-700" />
-                <form 
-                  onSubmit={handleSubmit} 
-                  className="relative flex items-center gap-2 bg-[#0a0a0b]/90 border border-white/10 rounded-lg sm:rounded-xl p-1 sm:p-1.5 backdrop-blur-3xl focus-within:border-indigo-500/40 transition-all shadow-2xl"
-                >
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white/[0.03] hover:bg-white/10 border border-white/[0.05] items-center justify-center transition-all group/paper"
-                  >
-                    <Paperclip className="w-4 h-4 opacity-40 group-hover/paper:opacity-100 group-hover/paper:text-indigo-400 transition-all" />
-                    <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
-                  </button>
-                  
-                  <div className="flex-1 relative flex items-center min-w-0">
-                    <textarea
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSubmit(e as any);
-                        }
-                      }}
-                      rows={1}
-                      placeholder="Ask Mani..."
-                      className="w-full bg-transparent border-none py-2 px-1.5 sm:px-0 text-[13px] focus:outline-none focus:ring-0 text-white placeholder:text-white/10 font-bold resize-none min-h-[36px] max-h-32 scrollbar-hide flex items-center"
-                      style={{ height: 'auto', minHeight: '36px' }}
-                      onInput={(e) => {
-                        const target = e.target as HTMLTextAreaElement;
-                        target.style.height = 'auto';
-                        target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
-                      }}
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={toggleListening}
-                      className={cn(
-                        "hidden xs:flex p-2.5 rounded-xl transition-all duration-300",
-                        isListening 
-                          ? "bg-red-500/20 text-red-400 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.3)]" 
-                          : "text-white/20 hover:text-indigo-400 hover:bg-white/5"
-                      )}
-                    >
-                      {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                    </button>
-                    <button 
-                      disabled={isLoading || !input.trim()}
-                      type="submit" 
-                      className="h-9 sm:h-10 w-10 sm:w-12 rounded-lg bg-white text-black hover:bg-indigo-500 hover:text-white transition-all active:scale-95 disabled:opacity-10 flex items-center justify-center shrink-0 shadow-lg"
-                    >
-                      <Send className="w-3.5 h-3.5 sm:w-4 h-4" />
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
+            <ChatInput 
+              input={input}
+              setInput={setInput}
+              isLoading={isLoading}
+              isListening={isListening}
+              toggleListening={toggleListening}
+              handleSubmit={handleSubmit}
+              handleFileUpload={handleFileUpload}
+              handleClearInput={handleClearInput}
+            />
           </div>
         </div>
       </main>
     </div>
-  );
-}
-
-// Components
-function MessageBubble({ message }: { message: Message }) {
-  const isUser = message.role === 'user';
-  
-  return (
-    <motion.div 
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={cn("flex w-full mb-6 last:mb-0", isUser ? "justify-end" : "justify-start")}
-    >
-      <div className={cn("max-w-[85%] sm:max-w-[75%] lg:max-w-[70%] flex flex-col gap-1.5", isUser ? "items-end text-right" : "items-start")}>
-        <div className={cn("flex items-center gap-1.5 px-1 mb-0.5", isUser && "flex-row-reverse")}>
-           <div className={cn(
-             "w-5 h-5 rounded-md flex items-center justify-center",
-             isUser ? "bg-white/10" : "bg-indigo-500/10"
-           )}>
-             {isUser ? <UserIcon className="w-3 h-3" /> : <Sparkles className="w-3 h-3 text-indigo-400" />}
-           </div>
-           <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30">
-             {isUser ? 'Human Subject' : 'Neural Core'}
-           </span>
-        </div>
-
-        <div className={cn(
-          "px-3 py-2.5 rounded-lg shadow-xl relative overflow-hidden backdrop-blur-3xl border text-[11px] font-medium leading-relaxed",
-          isUser 
-            ? "bg-white/[0.08] border-white/20 text-white rounded-tr-none" 
-            : "bg-[#0B0B0C] border-white/5 text-white/90 rounded-tl-none shadow-black/40"
-        )}>
-          {message.fileUrl && (
-            <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10 flex items-center gap-4 group cursor-pointer hover:bg-white/10 transition-all">
-               <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-indigo-400" />
-               </div>
-               <div className="text-left overflow-hidden">
-                  <p className="text-[10px] text-white/40 font-black uppercase tracking-widest">Document Attachment</p>
-                  <p className="text-xs text-white/80 font-bold truncate">{message.fileName}</p>
-               </div>
-            </div>
-          )}
-          <div className="prose prose-sm prose-invert prose-indigo max-w-none prose-p:leading-relaxed text-white/90">
-            <div className="markdown-body">
-              <ReactMarkdown
-                components={{
-                  code({ node, inline, className, children, ...props }: any) {
-                    return !inline ? (
-                      <CodeBlock className={className} {...props}>{children}</CodeBlock>
-                    ) : (
-                      <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-indigo-300" {...props}>{children}</code>
-                    )
-                  }
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function LoadingBubble() {
-  return (
-    <div className="flex justify-start">
-      <div className="bg-white/[0.01] border border-white/5 px-8 py-6 rounded-[1.5rem] rounded-tl-none flex gap-2 items-center">
-        <motion.div animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1 }} className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-        <motion.div animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-        <motion.div animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-      </div>
-    </div>
-  );
-}
-
-function CodeBlock({ children, className, ...props }: any) {
-  const [copied, setCopied] = useState(false);
-  const code = String(children).replace(/\n$/, '');
-  const match = /language-(\w+)/.exec(className || '');
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="relative group/code my-4 border border-white/5 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 bg-white/[0.03] border-b border-white/5">
-        <span className="text-[8px] font-black tracking-[0.3em] text-white/30 uppercase">{match ? match[1] : 'Neural Code'}</span>
-        <button onClick={handleCopy} className="text-white/40 hover:text-white transition-all">
-          {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-        </button>
-      </div>
-      <pre className="p-4 bg-[#030303] overflow-x-auto scrollbar-hide">
-        <code className="text-[11px] sm:text-xs font-mono leading-relaxed" {...props}>{children}</code>
-      </pre>
-    </div>
-  );
-}
-
-function Logo({ hideVersion = false, onClick }: { hideVersion?: boolean, onClick?: () => void }) {
-  return (
-    <div className="flex items-center gap-2 group cursor-pointer select-none" onClick={onClick}>
-      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 via-violet-600 to-indigo-700 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20 relative overflow-hidden group-hover:scale-105 transition-transform duration-500">
-        <Sparkles className="w-3.5 h-3.5 text-white relative z-10" />
-        <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </div>
-      <div className="flex flex-col">
-        <span className="font-display text-sm font-bold tracking-tighter text-white italic" style={{ fontFamily: 'Arial' }}>
-          Mani AI
-        </span>
-        {!hideVersion && (
-          <span className="text-[7px] font-black tracking-[0.4em] text-indigo-400 uppercase opacity-50">
-            Persistent Neural Cloud
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SuggestionCard({ title, description, onClick }: { title: string, description: string, onClick: () => void }) {
-  return (
-    <button 
-      onClick={onClick}
-      className="p-4 rounded-xl bg-white/[0.015] border border-white/5 hover:border-indigo-500/40 hover:bg-white/[0.03] text-left transition-all group relative overflow-hidden"
-    >
-      <div className="absolute top-0 right-0 p-4 opacity-[0.02] group-hover:opacity-[0.08] transition-opacity">
-        <Sparkles className="w-10 h-10" />
-      </div>
-      <h4 className="text-[8px] font-black text-indigo-400 mb-1 uppercase tracking-widest">{title}</h4>
-      <p className="text-[11px] text-white/30 font-medium leading-relaxed group-hover:text-white/60 transition-all">{description}</p>
-    </button>
   );
 }

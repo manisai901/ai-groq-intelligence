@@ -18,63 +18,14 @@
 }
 
 .glass {
-  @apply bg-white/[0.02] backdrop-blur-3xl border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.4)];
+  @apply bg-white/[0.02] border border-white/5;
 }
 
 .glass-premium {
-  @apply bg-white/[0.01] backdrop-blur-2xl border border-white/[0.04] shadow-[0_8px_32px_0_rgba(0,0,0,0.8)];
+  @apply bg-white/[0.01] border border-white/[0.04];
 }
 
 .sidebar-glass {
-  @apply bg-[#050505]/95 backdrop-blur-3xl border-r border-white/[0.03];
-}
-
-.glow-indigo {
-  background: radial-gradient(circle at center, rgba(124, 58, 237, 0.12) 0%, transparent 70%);
-}
-
-.glow-blue {
-  background: radial-gradient(circle at center, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
-}
-
-.glow-violet {
-  background: radial-gradient(circle at center, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
-}
-
-.stardust-overlay {
-  position: fixed;
-  inset: 0;
-  background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0);
-  background-size: 48px 48px;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.glow-indigo { 
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.4) 0%, transparent 70%); 
-}
-
-.glow-violet { 
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%); 
-}
-
-.glass-premium { 
-  backdrop-filter: blur(40px); 
-  background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)); 
-}
-
-.sidebar-glass { 
-  backdrop-filter: blur(60px); 
-  background: rgba(3,3,3,0.8); 
-  border-right: 1px solid rgba(255,255,255,0.03); 
-}
-
-@keyframes pulse-slow {
-  0%, 100% { opacity: 0.3; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.05); }
-}
-
-.animate-pulse-slow { 
-  animation: pulse-slow 12s ease-in-out infinite; 
+  @apply bg-[#050505]/95 border-r border-white/[0.03];
 }
 

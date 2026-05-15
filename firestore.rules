@@ -49,7 +49,8 @@ service cloud.firestore {
       return data.role is string && (data.role == 'user' || data.role == 'assistant') &&
              data.content is string && data.content.size() <= 20000 &&
              data.timestamp is timestamp &&
-             data.keys().hasAll(['role', 'content', 'timestamp']);
+             data.userId is string && data.userId == request.auth.uid &&
+             data.keys().hasAll(['role', 'content', 'timestamp', 'userId']);
     }
 
     // -------------------------------------------------------------------------
@@ -95,9 +96,9 @@ service cloud.firestore {
 
       // Messages Subcollection
       match /messages/{messageId} {
-        // Only allow access if the user owns the parent conversation
-        allow read, write: if isSignedIn() && 
-          get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
+        allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+        allow create: if isSignedIn() && isValidMessage(incoming()) && isValidId(messageId);
+        allow update, delete: if false;
       }
     }
   }
