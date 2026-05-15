@@ -1,84 +1,57 @@
 {
   "entities": {
-    "GlobalStats": {
-      "title": "Global Stats",
-      "description": "Aggregated application usage statistics",
-      "type": "object",
-      "properties": {
-        "totalUsers": { "type": "number" },
-        "totalVisits": { "type": "number" }
-      },
-      "required": ["totalUsers", "totalVisits"]
-    },
-    "DailyStats": {
-      "title": "Daily Stats",
-      "description": "Statistics for a specific day",
-      "type": "object",
-      "properties": {
-        "uniqueUsers": { "type": "number" },
-        "visits": { "type": "number" },
-        "date": { "type": "string", "format": "date" }
-      },
-      "required": ["uniqueUsers", "visits", "date"]
-    },
     "User": {
       "title": "User Profile",
-      "description": "User account information from Firebase Auth.",
+      "description": "Stores user profile information for authentication and personalization.",
       "type": "object",
       "properties": {
-        "uid": { "type": "string" },
-        "email": { "type": "string" },
-        "displayName": { "type": "string" },
-        "photoURL": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "lastLoginAt": { "type": "string", "format": "date-time" }
+        "uid": { "type": "string", "description": "Unique identifier for the user." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "displayName": { "type": "string", "description": "User's visible name." },
+        "photoURL": { "type": "string", "format": "uri", "description": "Link to user's profile picture." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the user account was created." },
+        "lastLoginAt": { "type": "string", "format": "date-time", "description": "Timestamp of the user's last login." }
       },
       "required": ["uid", "email"]
     },
     "Conversation": {
-      "title": "Chat Conversation",
-      "description": "Metadata for a specific chat thread.",
+      "title": "Conversation",
+      "description": "Represents a chat session between a user and the AI.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
-        "title": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "lastUpdatedAt": { "type": "string", "format": "date-time" }
+        "userId": { "type": "string", "description": "Reference to the owner user's UID." },
+        "title": { "type": "string", "description": "Descriptive title for the conversation." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the conversation was started." },
+        "lastUpdatedAt": { "type": "string", "format": "date-time", "description": "When the last message was sent." }
       },
       "required": ["userId", "title", "createdAt"]
     },
     "Message": {
-      "title": "Chat Message",
-      "description": "Individual message within a conversation.",
+      "title": "Message",
+      "description": "An individual message within a conversation.",
       "type": "object",
       "properties": {
-        "role": { "type": "string", "enum": ["user", "assistant"] },
-        "content": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
+        "role": { "type": "string", "enum": ["user", "assistant"], "description": "The sender's role." },
+        "content": { "type": "string", "description": "The text content of the message." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the message was sent." },
+        "fileUrl": { "type": "string", "format": "uri", "description": "Optional URL to an attached file." },
+        "fileName": { "type": "string", "description": "Optional name of an attached file." }
       },
       "required": ["role", "content", "timestamp"]
     }
   },
   "firestore": {
-    "/stats/global": {
-      "schema": "GlobalStats",
-      "description": "Global usage counters"
-    },
-    "/daily_stats/{date}": {
-      "schema": "DailyStats",
-      "description": "Daily usage counters indexed by date"
-    },
     "/users/{userId}": {
       "schema": "User",
-      "description": "User profiles restricted to the owner."
+      "description": "Collection of user profiles."
     },
     "/conversations/{conversationId}": {
       "schema": "Conversation",
-      "description": "Chat thread metadata owned by a user."
+      "description": "Root collection for all chat sessions."
     },
     "/conversations/{conversationId}/messages/{messageId}": {
       "schema": "Message",
-      "description": "Messages belonging to a conversation."
+      "description": "Subcollection of messages for a specific conversation."
     }
   }
 }

@@ -439,20 +439,24 @@ export default function App() {
     
     let currentConvId = activeConversationId;
     
-    // Create new conversation document locally and set ID immediately
+    // Create new conversation document if needed
     if (!currentConvId) {
       const newConvRef = doc(collection(db, 'conversations'));
       currentConvId = newConvRef.id;
       setActiveConversationId(currentConvId);
       
-      setDoc(newConvRef, {
-        userId: user.uid,
-        title: userMessage.slice(0, 30),
-        createdAt: serverTimestamp(),
-        lastUpdatedAt: serverTimestamp()
-      }).catch(err => {
+      try {
+        await setDoc(newConvRef, {
+          userId: user.uid,
+          title: userMessage.slice(0, 30),
+          createdAt: serverTimestamp(),
+          lastUpdatedAt: serverTimestamp()
+        });
+      } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `conversations/${newConvRef.id}`);
-      });
+        setIsLoading(false);
+        return;
+      }
     }
 
     try {
@@ -466,14 +470,16 @@ export default function App() {
       
       setMessages(prev => [...prev, localUserMsg]);
 
-      // 2. Save user message to Firestore in background
-      addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
-        role: 'user',
-        content: userMessage,
-        timestamp: serverTimestamp()
-      }).catch(err => {
+      // 2. Save user message to Firestore
+      try {
+        await addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
+          role: 'user',
+          content: userMessage,
+          timestamp: serverTimestamp()
+        });
+      } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `conversations/${currentConvId}/messages`);
-      });
+      }
 
       console.log("Calling backend synthesis...");
       // 3. Call backend for streaming response
@@ -542,19 +548,27 @@ export default function App() {
       
       setStreamingContent(null);
 
-      // 4. Save full assistant message to Firestore in background
+      // 4. Save full assistant message to Firestore
       if (assistantText.trim()) {
-        addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
-          role: 'assistant',
-          content: assistantText,
-          timestamp: serverTimestamp()
-        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `conversations/${currentConvId}/messages`));
+        try {
+          await addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
+            role: 'assistant',
+            content: assistantText,
+            timestamp: serverTimestamp()
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, `conversations/${currentConvId}/messages`);
+        }
       }
 
       // Update conversation metadata
-      updateDoc(doc(db, 'conversations', currentConvId), {
-        lastUpdatedAt: serverTimestamp()
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `conversations/${currentConvId}`));
+      try {
+        await updateDoc(doc(db, 'conversations', currentConvId), {
+          lastUpdatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `conversations/${currentConvId}`);
+      }
 
     } catch (error: any) {
       console.error(error);
