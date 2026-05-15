@@ -41,12 +41,13 @@ service cloud.firestore {
       return data.userId is string && data.userId == request.auth.uid &&
              data.title is string && data.title.size() <= 200 &&
              data.createdAt is timestamp &&
+             (data.get('lastUpdatedAt', request.time) is timestamp) &&
              data.keys().hasAll(['userId', 'title', 'createdAt']);
     }
 
     function isValidMessage(data) {
       return data.role is string && (data.role == 'user' || data.role == 'assistant') &&
-             data.content is string && data.content.size() <= 10000 &&
+             data.content is string && data.content.size() <= 20000 &&
              data.timestamp is timestamp &&
              data.keys().hasAll(['role', 'content', 'timestamp']);
     }
@@ -60,10 +61,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Stats (Publicly readable, system writable - for now keeping simple)
+    // Stats (Publicly readable, system writable)
     match /stats/global {
       allow read: if true;
-      allow write: if true; // In real production, this would be cloud functions only
+      allow write: if true;
     }
 
     match /daily_stats/{date} {
@@ -87,15 +88,16 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidConversation(incoming()) && isValidId(conversationId);
       allow update: if isSignedIn() && existing().userId == request.auth.uid && (
         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastUpdatedAt']) &&
-        isValidConversation(incoming())
+        incoming().userId == request.auth.uid && 
+        incoming().createdAt == existing().createdAt
       );
       allow delete: if isSignedIn() && existing().userId == request.auth.uid;
 
       // Messages Subcollection
       match /messages/{messageId} {
-        allow list, get: if isSignedIn();
-        allow create: if isSignedIn() && isValidMessage(incoming()) && isValidId(messageId);
-        allow update, delete: if false; // Messages are immutable in this flow
+        // Only allow access if the user owns the parent conversation
+        allow read, write: if isSignedIn() && 
+          get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
       }
     }
   }

@@ -263,19 +263,20 @@ export default function App() {
     return t2 - t1; // desc
   }) || [];
 
-  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
+  const [selectionDoneUserId, setSelectionDoneUserId] = useState<string | null>(null);
 
   // Auto-select first conversation if available
   useEffect(() => {
-    if (user && user.uid !== loadedUserId && !loadingConversations) {
+    if (user && !loadingConversations && user.uid !== selectionDoneUserId) {
       if (conversations.length > 0) {
         setActiveConversationId(conversations[0].id);
-      } else {
-        setActiveConversationId(null);
+        setSelectionDoneUserId(user.uid);
+      } else if (conversations.length === 0) {
+        // If it's truly empty after loading, we mark it as checked for this user
+        setSelectionDoneUserId(user.uid);
       }
-      setLoadedUserId(user.uid);
     }
-  }, [user, conversations, loadingConversations, loadedUserId]);
+  }, [user, conversations, loadingConversations, selectionDoneUserId]);
 
   // Fetch messages when activeConversationId changes
   useEffect(() => {
@@ -450,7 +451,7 @@ export default function App() {
         createdAt: serverTimestamp(),
         lastUpdatedAt: serverTimestamp()
       }).catch(err => {
-        console.error("Conversation creation failed:", err);
+        handleFirestoreError(err, OperationType.CREATE, `conversations/${newConvRef.id}`);
       });
     }
 
@@ -471,7 +472,7 @@ export default function App() {
         content: userMessage,
         timestamp: serverTimestamp()
       }).catch(err => {
-        console.error("Message save error:", err);
+        handleFirestoreError(err, OperationType.CREATE, `conversations/${currentConvId}/messages`);
       });
 
       console.log("Calling backend synthesis...");
@@ -547,13 +548,13 @@ export default function App() {
           role: 'assistant',
           content: assistantText,
           timestamp: serverTimestamp()
-        }).catch(err => console.error(err));
+        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `conversations/${currentConvId}/messages`));
       }
 
       // Update conversation metadata
       updateDoc(doc(db, 'conversations', currentConvId), {
         lastUpdatedAt: serverTimestamp()
-      }).catch(err => console.error(err));
+      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `conversations/${currentConvId}`));
 
     } catch (error: any) {
       console.error(error);
@@ -670,6 +671,21 @@ export default function App() {
 
         <nav className="flex-1 px-2.5 overflow-y-auto scrollbar-hide space-y-0.5">
           <p className="text-[7px] font-black uppercase tracking-[0.3em] text-white/20 mb-1.5 px-2">History</p>
+          
+          {loadingConversations && conversations.length === 0 && (
+            <div className="p-4 text-center">
+              <Loader2 className="w-4 h-4 text-white/20 animate-spin mx-auto mb-2" />
+              <p className="text-[8px] font-bold text-white/20 uppercase tracking-widest">Syncing history...</p>
+            </div>
+          )}
+
+          {convError && (
+            <div className="p-4 text-center">
+               <p className="text-[8px] font-bold text-red-400 uppercase tracking-widest mb-1">Sync Error</p>
+               <p className="text-[7px] text-white/20 line-clamp-2">{convError.message}</p>
+            </div>
+          )}
+
           {conversations.map((conv) => (
             <div 
               key={conv.id}
@@ -1049,7 +1065,7 @@ function Logo({ hideVersion = false, onClick }: { hideVersion?: boolean, onClick
         </span>
         {!hideVersion && (
           <span className="text-[7px] font-black tracking-[0.4em] text-indigo-400 uppercase opacity-50">
-            Enterprise
+            Persistent Neural Cloud
           </span>
         )}
       </div>
