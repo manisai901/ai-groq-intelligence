@@ -6,31 +6,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// Simple in-memory rate limiter
-const rateLimitCache = new Map<string, { count: number, resetTime: number }>();
-const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 50;
-
-function simpleRateLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-
-  let limitData = rateLimitCache.get(ip);
-  if (!limitData || limitData.resetTime < now) {
-    limitData = { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS };
-    rateLimitCache.set(ip, limitData);
-    return next();
-  }
-
-  limitData.count++;
-  if (limitData.count > MAX_REQUESTS_PER_WINDOW) {
-    return res.status(429).json({ error: "Too many requests. Please try again later." });
-  }
-
-  rateLimitCache.set(ip, limitData);
-  next();
-}
-
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
@@ -38,16 +13,8 @@ async function startServer() {
   app.use(express.json());
 
   // API Route for Groq with Streaming
-  app.post("/api/chat", simpleRateLimit, async (req, res) => {
-    console.log("Chat request received from", req.ip);
-    const controller = new AbortController();
-    
-    // Handle client disconnect gracefully
-    req.on("close", () => {
-      console.log("Client disconnected unexpectedly. Aborting neural request.");
-      controller.abort();
-    });
-
+  app.post("/api/chat", async (req, res) => {
+    console.log("Chat request received");
     try {
       const apiKey = process.env.GROQ_API_KEY;
       if (!apiKey) {
@@ -95,49 +62,39 @@ async function startServer() {
       if (res.flushHeaders) res.flushHeaders();
 
       try {
+        const startTime = Date.now();
+        
         const stream = await groqClient.chat.completions.create({
           messages: finalMessages as any,
           model: model,
           temperature: 0.7,
           max_tokens: 4096,
           stream: true,
-        }, { signal: controller.signal }).catch(async (e: any) => {
-          if (e.name === 'AbortError') throw e;
+        }).catch(async (e) => {
           console.warn(`[GROQ] Primary failed: ${e.message}. Trying 8b.`);
           return await groqClient.chat.completions.create({
             messages: finalMessages as any,
             model: "llama-3.1-8b-instant",
             temperature: 0.7,
             stream: true,
-          }, { signal: controller.signal });
+          });
         });
 
         for await (const chunk of stream) {
-          if (controller.signal.aborted) {
-            console.log("Stream aborted by client disconnect.");
-            break;
-          }
           const content = chunk.choices[0]?.delta?.content || "";
           if (content) {
             res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
           }
         }
       } catch (err: any) {
-        if (err.name === 'AbortError') {
-          console.log("Neural request aborted successfully.");
-        } else {
-          console.error("[STREAM ERROR]", err);
-          res.write(`data: ${JSON.stringify({ error: `Neural Error: ${err.message}` })}\n\n`);
-        }
+        console.error("[STREAM ERROR]", err);
+        res.write(`data: ${JSON.stringify({ error: `Neural Error: ${err.message}` })}\n\n`);
       }
 
-      if (!controller.signal.aborted) {
-        res.write('data: [DONE]\n\n');
-      }
+      res.write('data: [DONE]\n\n');
       res.end();
 
     } catch (error: any) {
-      if (error.name === 'AbortError') return;
       console.error("[NEXUS ERROR]", error);
       const errorMessage = error.message || "Failed to generate neural response";
       

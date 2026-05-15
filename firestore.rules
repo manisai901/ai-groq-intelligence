@@ -96,7 +96,7 @@ service cloud.firestore {
 
       // Messages Subcollection
       match /messages/{messageId} {
-        allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+        allow read: if isSignedIn() && get(/databases/$(database)/documents/conversations/$(conversationId)).data.userId == request.auth.uid;
         allow create: if isSignedIn() && isValidMessage(incoming()) && isValidId(messageId);
         allow update, delete: if false;
       }
