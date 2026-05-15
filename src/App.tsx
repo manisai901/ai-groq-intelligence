@@ -18,12 +18,15 @@ import {
   ShieldCheck, 
   Pencil, 
   LifeBuoy,
-  Loader2
+  Loader2,
+  Search,
+  Bot
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { 
   doc, 
   getDoc, 
+  getDocs,
   setDoc, 
   updateDoc, 
   onSnapshot, 
@@ -75,6 +78,12 @@ interface Conversation {
   lastUpdatedAt: Date | Timestamp;
 }
 
+interface SearchResult {
+  message: Message;
+  conversationId: string;
+  conversationTitle: string;
+}
+
 export default function App() {
   const [user, authLoading] = useAuthState(auth);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -87,8 +96,13 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
   const [showSupportMail, setShowSupportMail] = useState(false);
   const [streamingContent, setStreamingContent] = useState<{ id: string, content: string } | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [configStatus, setConfigStatus] = useState<{ hasKey: boolean, checked: boolean }>({ hasKey: false, checked: false });
 
   // Stream reader ref to allow cleanup
@@ -161,35 +175,9 @@ export default function App() {
   }, [messages, streamingContent, isLoading]);
 
   // Fetch conversations for current user
-  const [conversationsSnapshot, loadingConversations, convError] = useCollection(
-    user ? query(
-      collection(db, 'conversations'),
-      where('userId', '==', user.uid)
-    ) : null
-  );
-
-  if (convError) {
-    console.error("Conversations fetch error:", convError);
-  }
-
-  const conversations = conversationsSnapshot?.docs.map(doc => {
-    const data = doc.data({ serverTimestamps: 'estimate' });
-    let lastUpdate: Date;
-    if (data.lastUpdatedAt && typeof data.lastUpdatedAt.toDate === 'function') {
-      lastUpdate = data.lastUpdatedAt.toDate();
-    } else {
-      lastUpdate = new Date(data.lastUpdatedAt || Date.now());
-    }
-    return {
-      id: doc.id,
-      ...data,
-      lastUpdatedAt: lastUpdate
-    } as Conversation;
-  }).sort((a, b) => {
-    const t1 = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : 0;
-    const t2 = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : 0;
-    return t2 - t1;
-  }) || [];
+  const loadingConversations = false;
+  const convError = null;
+  const conversations: Conversation[] = [];
 
   const formatDistance = (date: Date) => {
     const now = new Date();
@@ -203,6 +191,14 @@ export default function App() {
   };
 
   const [selectionDoneUserId, setSelectionDoneUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setSelectionDoneUserId(null);
+      setActiveConversationId(null);
+      setMessages([]);
+    }
+  }, [user]);
 
   // Auto-select first conversation if available
   useEffect(() => {
@@ -219,15 +215,69 @@ export default function App() {
 
   const prevConvIdRef = useRef<string | null>(null);
 
+  // Search logic
+  useEffect(() => {
+    if (!searchQuery.trim() || !user || conversations.length === 0) {
+      setSearchResults(prev => prev.length === 0 ? prev : []);
+      setIsSearching(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const lowerQ = searchQuery.toLowerCase();
+        // Fire concurrent fetches for all current user's conversations
+        const calls = conversations.map(c => 
+          getDocs(query(collection(db, 'conversations', c.id, 'messages')))
+        );
+        const docsMatches: SearchResult[] = [];
+        
+        const snapshots = await Promise.all(calls);
+        
+        snapshots.forEach((snap, idx) => {
+          const conv = conversations[idx];
+          snap.forEach(doc => {
+            const data = doc.data();
+            const textContent = data.content;
+            if (typeof textContent === 'string' && textContent.toLowerCase().includes(lowerQ)) {
+              let ts = new Date();
+              if (data.timestamp?.toDate) ts = data.timestamp.toDate();
+              else if (data.timestamp instanceof Date) ts = data.timestamp;
+
+              docsMatches.push({
+                message: { id: doc.id, ...data, timestamp: ts } as Message,
+                conversationId: conv.id,
+                conversationTitle: conv.title || 'Unknown Chat'
+              });
+            }
+          });
+        });
+
+        docsMatches.sort((a, b) => (b.message.timestamp as Date).getTime() - (a.message.timestamp as Date).getTime());
+        setSearchResults(docsMatches.slice(0, 25));
+      } catch (err) {
+        console.error("Search error", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, user, conversations]);
+
   // Fetch messages when activeConversationId changes
   useEffect(() => {
-    // Disabled snapshot listener to keep chat ephemeral
     // Only clear if we are switching between different existing conversations
     if (activeConversationId && prevConvIdRef.current && activeConversationId !== prevConvIdRef.current) {
       setMessages([]);
     }
     prevConvIdRef.current = activeConversationId;
-
+    
+    if (!activeConversationId || !user) {
+      if (!activeConversationId) setMessages([]);
+      return;
+    }
   }, [activeConversationId, user]);
 
   const startNewConversation = useCallback(async () => {
@@ -238,15 +288,6 @@ export default function App() {
 
   const deleteConversation = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    try {
-      await deleteDoc(doc(db, 'conversations', id));
-      if (activeConversationId === id) {
-        setActiveConversationId(null);
-        setMessages([]);
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `conversations/${id}`);
-    }
   };
 
   const renameConversation = async (e: React.FormEvent, id: string) => {
@@ -255,15 +296,7 @@ export default function App() {
       setEditingId(null);
       return;
     }
-    try {
-      await updateDoc(doc(db, 'conversations', id), {
-        title: editTitle.trim(),
-        lastUpdatedAt: serverTimestamp()
-      });
-      setEditingId(null);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `conversations/${id}`);
-    }
+    setEditingId(null);
   };
 
   // Helper to handle speech
@@ -300,24 +333,25 @@ export default function App() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !user) return;
 
     try {
       setIsLoading(true);
-      // Mocked file upload for ephemeral state
-      const url = URL.createObjectURL(file);
+      
+      const fileRef = ref(storage, `uploads/${user.uid}/${Date.now()}_${file.name}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
 
-      // Add special message with file
-      const fileMsg: Message = {
-        id: 'msg-' + Date.now() + '-file',
+      const newFileMsg: Message = {
         role: 'user',
         content: `Uploaded file: ${file.name}`,
         fileUrl: url,
         fileName: file.name,
         timestamp: new Date(),
+        id: 'msg-' + Date.now()
       };
       
-      setMessages(prev => [...prev, fileMsg]);
+      setMessages(prev => [...prev, newFileMsg]);
 
       setIsLoading(false);
     } catch (error) {
@@ -333,24 +367,28 @@ export default function App() {
     const userMessage = input.trim();
     setInput('');
     setIsLoading(true);
+    setChatError(null);
 
     let currentConvId = activeConversationId;
-    let newMessagesList = [...messages]; // capture current messages
-
-    // 1. Instant UI update (Optimistic)
-    const localUserMsg: Message = {
-      id: 'msg-' + Date.now() + '-user',
-      role: 'user',
-      content: userMessage,
-      timestamp: new Date()
-    };
-    newMessagesList.push(localUserMsg);
-    setMessages(newMessagesList);
 
     try {
+      if (!user) throw new Error("Must be logged in to chat.");
+
+      // Add local message for user
+      const newUserMsg: Message = {
+        role: 'user',
+        content: userMessage,
+        timestamp: new Date(),
+        id: 'msg-' + Date.now()
+      };
+      
+      setMessages(prev => [...prev, newUserMsg]);
+
+      const historyToSend = [...messages, newUserMsg];
+      
       const inputBody = JSON.stringify({
         message: userMessage,
-        history: messages.slice(-15).map(m => ({ 
+        history: historyToSend.slice(-15).map(m => ({ 
           role: m.role,
           content: m.content
         }))
@@ -432,26 +470,20 @@ export default function App() {
       setIsLoading(false);
 
       if (assistantText.trim()) {
-        const finalMsg: Message = {
-          id: 'msg-' + Date.now() + '-assistant',
+        const newAssistantMsg: Message = {
           role: 'assistant',
           content: assistantText,
           timestamp: new Date(),
+          id: 'msg-' + Date.now()
         };
-        
-        setMessages(prev => [...prev, finalMsg]);
+        setMessages(prev => [...prev, newAssistantMsg]);
       }
 
     } catch (error: any) {
       if (error.name === 'AbortError') return;
       console.error("Chat Error:", error);
       
-      setMessages(prev => [...prev, {
-        id: 'err-' + Date.now(),
-        role: 'assistant',
-        content: `**Error:** ${error.message}`,
-        timestamp: new Date()
-      }]);
+      setChatError(`**Error:** ${error.message}`);
     } finally {
       setIsLoading(false);
       setStreamingContent(null);
@@ -469,6 +501,40 @@ export default function App() {
     );
   }
 
+  if (!user) {
+    return (
+      <div className="relative flex h-screen w-full bg-[#030303] items-center justify-center p-4 overflow-hidden">
+        <div className="fixed inset-0 pointer-events-none z-0">
+          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(79,70,229,0.1),transparent_70%)]" />
+        </div>
+        
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="z-10 max-w-md w-full glass-premium p-10 rounded-[3rem] border border-white/10 text-center space-y-8 shadow-2xl"
+        >
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center">
+              <Bot className="w-8 h-8 text-indigo-400" />
+            </div>
+          </div>
+          <div className="space-y-4">
+            <h1 className="text-3xl font-display font-bold text-white tracking-tight">Welcome</h1>
+            <p className="text-white/40 text-sm leading-relaxed">
+              Log in to save your conversation history and access your real-time chats across devices.
+            </p>
+          </div>
+          <button 
+            onClick={handleLogin}
+            className="w-full h-14 bg-white text-black rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-white/90 transition-all active:scale-95"
+          >
+            <Mail className="w-5 h-5" />
+            Continue with Google
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-screen w-full bg-[#030303] overflow-hidden font-sans text-white/90 selection:bg-indigo-500/30">
@@ -522,86 +588,125 @@ export default function App() {
           </button>
         </div>
 
+        <div className="px-3 mb-2">
+          <div className="relative">
+             <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" />
+             <input type="text" placeholder="SEARCH HISTORY..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-white/[0.02] border border-white/5 rounded-lg pl-7 pr-3 py-2 text-[9px] font-bold text-white placeholder-white/30 outline-none uppercase tracking-widest focus:bg-white/5 transition-all" />
+          </div>
+        </div>
+
         <nav className="flex-1 px-2.5 overflow-y-auto scrollbar-hide space-y-0.5">
-          <p className="text-[7px] font-black uppercase tracking-[0.3em] text-white/20 mb-1.5 px-2">History</p>
+          <p className="text-[7px] font-black uppercase tracking-[0.3em] text-white/20 mb-1.5 px-2">
+            {searchQuery.trim() ? "Search Results" : "History"}
+          </p>
           
-          {loadingConversations && conversations.length === 0 && (
-            <div className="p-4 text-center">
-              <Loader2 className="w-4 h-4 text-white/20 animate-spin mx-auto mb-2" />
-              <p className="text-[8px] font-bold text-white/20 uppercase tracking-widest">Syncing history...</p>
-            </div>
-          )}
-
-          {convError && (
-            <div className="p-4 text-center">
-               <p className="text-[8px] font-bold text-red-400 uppercase tracking-widest mb-1">Sync Error</p>
-               <p className="text-[7px] text-white/20 line-clamp-2">{convError.message}</p>
-            </div>
-          )}
-
-          {conversations.map((conv) => (
-            <div 
-              key={conv.id}
-              onClick={() => {
-                if (editingId === conv.id) return;
-                setActiveConversationId(conv.id);
-                setSidebarOpen(false);
-              }}
-              className={cn(
-                "group relative flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all border border-transparent",
-                activeConversationId === conv.id 
-                  ? "bg-indigo-500/10 text-indigo-400 border-white/5" 
-                  : "text-white/40 hover:bg-white/[0.03] hover:text-white/80"
-              )}
-            >
-              <div className="flex items-center gap-2 overflow-hidden flex-1">
-                <MessageSquare className="w-3 h-3 shrink-0 opacity-40 group-hover:opacity-100" />
-                {editingId === conv.id ? (
-                  <form onSubmit={(e) => renameConversation(e, conv.id)} className="flex-1">
-                    <input
-                      autoFocus
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      onBlur={(e) => renameConversation(e as any, conv.id)}
-                      className="bg-transparent border-none text-xs font-semibold w-full focus:outline-none p-0 text-white"
-                    />
-                  </form>
-                ) : (
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="text-xs font-semibold truncate tracking-tight">{conv.title}</span>
-                    <span className="text-[7px] font-bold text-white/20 uppercase tracking-tighter">
-                      {formatDistance(conv.lastUpdatedAt instanceof Date ? conv.lastUpdatedAt : (conv.lastUpdatedAt as any)?.toDate?.() || new Date())}
-                    </span>
-                  </div>
-                )}
+          {searchQuery.trim() ? (
+            isSearching ? (
+              <div className="p-4 text-center">
+                <Loader2 className="w-4 h-4 text-white/20 animate-spin mx-auto mb-2" />
+                <p className="text-[8px] font-bold text-white/20 uppercase tracking-widest">Searching...</p>
               </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingId(conv.id);
-                    setEditTitle(conv.title);
+            ) : searchResults.length === 0 ? (
+              <div className="p-4 text-center">
+                <p className="text-[8px] font-bold text-white/20 uppercase tracking-widest">No results found</p>
+              </div>
+            ) : (
+              searchResults.map((result) => (
+                <div 
+                  key={result.message.id}
+                  onClick={() => {
+                    setActiveConversationId(result.conversationId);
+                    setSidebarOpen(false);
+                    setSearchQuery('');
                   }}
-                  className="p-1.5 hover:text-indigo-400 transition-all"
+                  className="group relative flex flex-col gap-1 p-2.5 rounded-lg cursor-pointer transition-all border border-transparent hover:bg-white/[0.03] text-left"
                 >
-                  <Pencil className="w-3 h-3" />
-                </button>
-                <button 
-                  onClick={(e) => deleteConversation(e, conv.id)}
-                  className="p-1.5 hover:text-red-400 transition-all"
+                  <p className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest line-clamp-1">{result.conversationTitle}</p>
+                  <p className="text-xs text-white/60 line-clamp-2 leading-snug">{result.message.content}</p>
+                </div>
+              ))
+            )
+          ) : (
+            <>
+              {loadingConversations && conversations.length === 0 && (
+                <div className="p-4 text-center">
+                  <Loader2 className="w-4 h-4 text-white/20 animate-spin mx-auto mb-2" />
+                  <p className="text-[8px] font-bold text-white/20 uppercase tracking-widest">Syncing history...</p>
+                </div>
+              )}
+
+              {convError && (
+                <div className="p-4 text-center">
+                   <p className="text-[8px] font-bold text-red-400 uppercase tracking-widest mb-1">Sync Error</p>
+                   <p className="text-[7px] text-white/20 line-clamp-2">{convError.message}</p>
+                </div>
+              )}
+
+              {conversations.map((conv) => (
+                <div 
+                  key={conv.id}
+                  onClick={() => {
+                    if (editingId === conv.id) return;
+                    setActiveConversationId(conv.id);
+                    setSidebarOpen(false);
+                  }}
+                  className={cn(
+                    "group relative flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all border border-transparent",
+                    activeConversationId === conv.id 
+                      ? "bg-indigo-500/10 text-indigo-400 border-white/5" 
+                      : "text-white/40 hover:bg-white/[0.03] hover:text-white/80"
+                  )}
                 >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          ))}
-          {conversations.length === 0 && (
-            <div className="p-8 text-center space-y-4">
-               <div className="w-12 h-12 rounded-full border border-white/5 flex items-center justify-center mx-auto opacity-20">
-                 <History className="w-5 h-5" />
-               </div>
-               <p className="text-[10px] uppercase tracking-widest text-white/20 font-bold">No threads yet</p>
-            </div>
+                  <div className="flex items-center gap-2 overflow-hidden flex-1">
+                    <MessageSquare className="w-3 h-3 shrink-0 opacity-40 group-hover:opacity-100" />
+                    {editingId === conv.id ? (
+                      <form onSubmit={(e) => renameConversation(e, conv.id)} className="flex-1">
+                        <input
+                          autoFocus
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onBlur={(e) => renameConversation(e as any, conv.id)}
+                          className="bg-transparent border-none text-xs font-semibold w-full focus:outline-none p-0 text-white"
+                        />
+                      </form>
+                    ) : (
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-xs font-semibold truncate tracking-tight">{conv.title}</span>
+                        <span className="text-[7px] font-bold text-white/20 uppercase tracking-tighter">
+                          {formatDistance(conv.lastUpdatedAt instanceof Date ? conv.lastUpdatedAt : (conv.lastUpdatedAt as any)?.toDate?.() || new Date())}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingId(conv.id);
+                        setEditTitle(conv.title);
+                      }}
+                      className="p-1.5 hover:text-indigo-400 transition-all"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button 
+                      onClick={(e) => deleteConversation(e, conv.id)}
+                      className="p-1.5 hover:text-red-400 transition-all"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {conversations.length === 0 && (
+                <div className="p-8 text-center space-y-4">
+                   <div className="w-12 h-12 rounded-full border border-white/5 flex items-center justify-center mx-auto opacity-20">
+                     <History className="w-5 h-5" />
+                   </div>
+                   <p className="text-[10px] uppercase tracking-widest text-white/20 font-bold">No threads yet</p>
+                </div>
+              )}
+            </>
           )}
         </nav>
 
@@ -737,7 +842,7 @@ export default function App() {
                   {messages.map((message, i) => (
                     <MessageBubble key={message.id || i} message={message} />
                   ))}
-                  {streamingContent && (
+                  {streamingContent && streamingContent.content !== '' && (
                     <MessageBubble 
                       message={{ 
                         id: streamingContent.id, 
@@ -747,11 +852,26 @@ export default function App() {
                       }} 
                     />
                   )}
-                  {isLoading && !streamingContent && (
-                    <div className="flex items-center gap-2 p-4 text-white/20">
-                      <div className="w-1 h-1 rounded-full bg-indigo-500 animate-bounce" />
-                      <div className="w-1 h-1 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-1 h-1 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.4s]" />
+                  {chatError && (
+                    <MessageBubble 
+                      message={{ 
+                        id: 'error', 
+                        role: 'assistant', 
+                        content: chatError, 
+                        timestamp: new Date() 
+                      }} 
+                    />
+                  )}
+                  {isLoading && (!streamingContent || streamingContent.content === '') && (
+                    <div className="flex items-center gap-3 p-4 bg-white/[0.02] border border-white/5 rounded-2xl w-fit">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse [animation-delay:0.2s]" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse [animation-delay:0.4s]" />
+                      </div>
+                      <span className="text-xs font-medium text-white/50 uppercase tracking-widest">
+                        Synthesizing intelligence...
+                      </span>
                     </div>
                   )}
                 </div>

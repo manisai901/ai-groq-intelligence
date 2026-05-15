@@ -38,7 +38,7 @@ async function startServer() {
         return { role, content };
       }).filter((m: any) => m.content && m.content.trim() !== "");
 
-      const systemPrompt = "You are MANI AI Enterprise v3.5. Direct, professional, innovative. Your user is human_subject_01. Provide grounded synthesis. Use markdown. Keep it high-precision.";
+      const systemPrompt = "You are MANI AI. You are a helpful and very concise AI assistant. Answer directly to the user's input without robotic greetings or excessive context.";
       
       const finalMessages = [
         { role: "system", content: systemPrompt },
