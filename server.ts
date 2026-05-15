@@ -33,69 +33,70 @@ async function startServer() {
 
       // Transform history to Groq format
       const historyMessages = (history || []).map((h: any) => {
-        // Handle various history formats
-        const role = (h.role === "model" || h.role === "assistant") ? "assistant" : "user";
-        const content = h.parts?.[0]?.text || h.content || "";
+        const role = (h.role === "assistant" || h.role === "model") ? "assistant" : "user";
+        const content = h.content || "";
         return { role, content };
-      }).filter((m: any) => m.content.trim() !== "");
+      }).filter((m: any) => m.content && m.content.trim() !== "");
 
-      const messages = [
-        {
-          role: "system" as const,
-          content: "You are Mani AI, a high-performance intelligence assistant. Provide precise, grounded, and helpful responses. Format your output with markdown. Use code blocks for technical content. Keep responses concise as per the compact UI requirements."
-        },
-        ...historyMessages,
-        { role: "user" as const, content: message }
+      const systemPrompt = "You are MANI AI Enterprise v3.5. Direct, professional, innovative. Your user is human_subject_01. Provide grounded synthesis. Use markdown. Keep it high-precision.";
+      
+      const finalMessages = [
+        { role: "system", content: systemPrompt },
+        ...historyMessages.slice(-10),
+        { role: "user", content: message }
       ];
 
-      const systemMessage = messages[0];
-      const otherMessages = messages.slice(1);
-      
-      // Keep only last 10 messages but preserve system prompt
-      const recentMessages = otherMessages.slice(-10);
-      const finalMessages = [systemMessage, ...recentMessages];
+      const model = "llama-3.3-70b-versatile";
+      console.log(`[SYNTHESIS] Initiating [Model: ${model}]...`);
 
-      console.log(`Sending request to Groq with ${finalMessages.length} messages`);
-      console.log(`Last message: "${message.slice(0, 50)}..."`);
-      console.log(`Model: llama-3.3-70b-versatile`);
-
-      // Set headers for SSE immediately
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
         'X-Content-Type-Options': 'nosniff'
       });
-      res.flushHeaders();
+      
+      // Pulse to confirm connection
+      res.write(`data: ${JSON.stringify({ text: " " })}\n\n`);
+      if (res.flushHeaders) res.flushHeaders();
 
-      console.log("Creating Groq chat completion...");
-      const stream = await groqClient.chat.completions.create({
-        messages: finalMessages,
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.7,
-        max_tokens: 2048,
-        stream: true,
-      });
-
-      console.log("Groq stream initialized, sending chunks...");
       try {
+        const startTime = Date.now();
+        
+        const stream = await groqClient.chat.completions.create({
+          messages: finalMessages as any,
+          model: model,
+          temperature: 0.7,
+          max_tokens: 4096,
+          stream: true,
+        }).catch(async (e) => {
+          console.warn(`[GROQ] Primary failed: ${e.message}. Trying 8b.`);
+          return await groqClient.chat.completions.create({
+            messages: finalMessages as any,
+            model: "llama-3.1-8b-instant",
+            temperature: 0.7,
+            stream: true,
+          });
+        });
+
         for await (const chunk of stream) {
           const content = chunk.choices[0]?.delta?.content || "";
           if (content) {
             res.write(`data: ${JSON.stringify({ text: content })}\n\n`);
           }
         }
-      } catch (streamError: any) {
-        console.error("Streaming error:", streamError);
-        res.write(`data: ${JSON.stringify({ error: "Stream interrupted" })}\n\n`);
+      } catch (err: any) {
+        console.error("[STREAM ERROR]", err);
+        res.write(`data: ${JSON.stringify({ error: `Neural Error: ${err.message}` })}\n\n`);
       }
 
       res.write('data: [DONE]\n\n');
       res.end();
 
     } catch (error: any) {
-      console.error("Groq API Error Detail:", error);
-      const errorMessage = error.message || "Failed to generate response";
+      console.error("[NEXUS ERROR]", error);
+      const errorMessage = error.message || "Failed to generate neural response";
       
       if (!res.headersSent) {
         res.status(500).json({ error: errorMessage });

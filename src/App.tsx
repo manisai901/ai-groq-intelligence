@@ -174,15 +174,33 @@ export default function App() {
 
   const conversations = conversationsSnapshot?.docs.map(doc => {
     const data = doc.data({ serverTimestamps: 'estimate' });
+    let lastUpdate: Date;
+    if (data.lastUpdatedAt && typeof data.lastUpdatedAt.toDate === 'function') {
+      lastUpdate = data.lastUpdatedAt.toDate();
+    } else {
+      lastUpdate = new Date(data.lastUpdatedAt || Date.now());
+    }
     return {
       id: doc.id,
-      ...data
+      ...data,
+      lastUpdatedAt: lastUpdate
     } as Conversation;
   }).sort((a, b) => {
-    const t1 = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : (a.lastUpdatedAt as any)?.toDate?.()?.getTime() || 0;
-    const t2 = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : (b.lastUpdatedAt as any)?.toDate?.()?.getTime() || 0;
-    return t2 - t1; // desc
+    const t1 = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : 0;
+    const t2 = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : 0;
+    return t2 - t1;
   }) || [];
+
+  const formatDistance = (date: Date) => {
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (diffInSeconds < 60) return 'just now';
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
 
   const [selectionDoneUserId, setSelectionDoneUserId] = useState<string | null>(null);
 
@@ -199,16 +217,24 @@ export default function App() {
     }
   }, [user, conversations, loadingConversations, selectionDoneUserId]);
 
+  const prevConvIdRef = useRef<string | null>(null);
+
   // Fetch messages when activeConversationId changes
   useEffect(() => {
-    if (!activeConversationId || !user) {
+    // Only clear if we are switching between different existing conversations
+    if (activeConversationId && prevConvIdRef.current && activeConversationId !== prevConvIdRef.current) {
       setMessages([]);
+    }
+    prevConvIdRef.current = activeConversationId;
+
+    if (!activeConversationId || !user) {
+      if (!activeConversationId) setMessages([]);
       return;
     }
 
     const q = query(
       collection(db, 'conversations', activeConversationId, 'messages'),
-      orderBy('timestamp', 'asc')
+      where('userId', '==', user.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -220,8 +246,6 @@ export default function App() {
             ts = data.timestamp.toDate();
           } else if (data.timestamp instanceof Date) {
             ts = data.timestamp;
-          } else if (typeof data.timestamp === 'number' || typeof data.timestamp === 'string') {
-            ts = new Date(data.timestamp);
           }
         }
         return {
@@ -231,10 +255,25 @@ export default function App() {
         } as Message;
       });
       
-      // Sort client-side to be absolutely certain
-      msgs.sort((a, b) => (a.timestamp as any).getTime() - (b.timestamp as any).getTime());
-      
-      setMessages(msgs);
+      setMessages(prev => {
+        // Find existing non-optimistic IDs
+        const existingIds = new Set(msgs.map(m => m.id));
+        // Keep optimistic messages that haven't been saved yet
+        const pendingOptimistic = prev.filter(m => m.id?.endsWith('-optimistic') && !msgs.some(real => real.content === m.content && real.role === m.role));
+        
+        const combined = [...msgs, ...pendingOptimistic].sort((a, b) => {
+          const t1 = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
+          const t2 = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
+          return t1 - t2;
+        });
+
+        // Deduplicate content if needed (simple check)
+        return combined.filter((m, i, arr) => {
+          if (!m.id?.endsWith('-optimistic')) return true;
+          // Only keep optimistic if no real one matches content/role
+          return !arr.some(other => !other.id?.endsWith('-optimistic') && other.content === m.content && other.role === m.role);
+        });
+      });
     }, (error) => {
       console.error("Messages Subscription Error:", error);
     });
@@ -352,58 +391,71 @@ export default function App() {
     const userMessage = input.trim();
     setInput('');
     setIsLoading(true);
+
+    // 1. Instant UI update (Optimistic) - Move to very top
+    const localUserMsg: Message = {
+      id: 'msg-' + Date.now() + '-user-optimistic',
+      role: 'user',
+      content: userMessage,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, localUserMsg]);
     
     let currentConvId = activeConversationId;
     
-    // Create new conversation document if needed
-    if (!currentConvId) {
-      const newConvRef = doc(collection(db, 'conversations'));
-      currentConvId = newConvRef.id;
-      setActiveConversationId(currentConvId);
-      
-      try {
+    try {
+      // Create new conversation document if needed
+      if (!currentConvId) {
+        const newConvRef = doc(collection(db, 'conversations'));
+        currentConvId = newConvRef.id;
+        setActiveConversationId(currentConvId);
+        
         await setDoc(newConvRef, {
           userId: user.uid,
           title: userMessage.slice(0, 30),
           createdAt: serverTimestamp(),
           lastUpdatedAt: serverTimestamp()
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `conversations/${newConvRef.id}`);
+        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `conversations/${newConvRef.id}`));
+      }
+
+      // Check limit
+      const MAX_CHARS = 1000;
+      if (userMessage.length > MAX_CHARS) {
+        setMessages(prev => [...prev, {
+          id: 'err-' + Date.now(),
+          role: 'assistant',
+          content: `**Neural Overflow:** Message exceeding ${MAX_CHARS} char limit.`,
+          timestamp: new Date()
+        }]);
         setIsLoading(false);
         return;
       }
-    }
 
-    const MAX_CHARS = 1000;
-    const charCount = input.length;
-    const isOverLimit = charCount > MAX_CHARS;
+      const inputBody = JSON.stringify({
+        message: userMessage,
+        history: messages.slice(-20).map(m => ({ 
+          role: m.role,
+          content: m.content
+        }))
+      });
 
-    const inputBody = JSON.stringify({
-      message: userMessage,
-      history: messages.slice(-6).map(m => ({ // Lightweight history slice
-        role: m.role,
-        content: m.content
-      }))
-    });
-
-    try {
-      // 1. Instant UI update
-      const localUserMsg: Message = {
-        id: 'temp-user-' + Date.now(),
+      // 2. Persist user message fully
+      const msgColl = collection(db, 'conversations', currentConvId, 'messages');
+      addDoc(msgColl, {
         role: 'user',
         content: userMessage,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, localUserMsg]);
+        timestamp: new Date(), 
+        userId: user.uid
+      }).catch(err => console.error("Firestore sync err:", err));
 
-      // Cancel any active stream
+      // 3. Initiate Synthesis
       if (activeReaderRef.current) {
         try { activeReaderRef.current.cancel(); } catch(e) {}
       }
 
-      // 2. Initiate Fetch with AbortController
       const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 90000); 
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -411,94 +463,95 @@ export default function App() {
         body: inputBody
       });
       
-      if (!response.ok) throw new Error(`Status: ${response.status}`);
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || `Synthesis Link Failure: ${response.status}`);
+      }
 
-      setStreamingContent({ id: 'streaming', content: '' });
+      setStreamingContent({ id: 'streaming-' + Date.now(), content: '' });
 
       const reader = response.body?.getReader();
-      if (!reader) throw new Error("No signal channel.");
+      if (!reader) throw new Error("Neural signal channel initialization failed.");
       activeReaderRef.current = reader;
 
       let assistantText = '';
       const decoder = new TextDecoder();
       let buffer = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        let isDone = false;
+        while (!isDone) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        
-        // Split by double newline to handle SSE data properly
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop() || '';
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line || !line.startsWith('data: ')) continue;
-          
-          const raw = line.slice(6).trim();
-          if (raw === '[DONE]') {
-            buffer = ''; // Clear trailing buffer if done
-            break;
-          }
-          
-          try {
-            const data = JSON.parse(raw);
-            if (data.text) {
-              assistantText += data.text;
-              setStreamingContent({ id: 'streaming', content: assistantText });
-            } else if (data.error) {
-              throw new Error(data.error);
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith(':')) continue;
+            if (!trimmed.startsWith('data: ')) continue;
+            
+            const raw = trimmed.slice(6).trim();
+            if (raw === '[DONE]') {
+              isDone = true;
+              break;
             }
-          } catch (e) {
-            // Ignore parse errors for malformed chunks
+            
+            try {
+              const data = JSON.parse(raw);
+              if (data.text) {
+                assistantText += data.text;
+                setStreamingContent(prev => ({ 
+                  id: prev?.id || 'streaming-' + Date.now(), 
+                  content: assistantText 
+                }));
+              } else if (data.error) {
+                throw new Error(data.error);
+              }
+            } catch (e) {
+              console.warn("JSON Parse err in bit-stream:", e);
+            }
           }
         }
+      } finally {
+        activeReaderRef.current = null;
+        setStreamingContent(null);
+        setIsLoading(false);
       }
-      
-      activeReaderRef.current = null;
-      setStreamingContent(null);
-      setIsLoading(false);
 
+      // 4. Finalize Assistant persistence
       if (assistantText.trim()) {
-        const finalAssistantMsg: Message = {
-          id: 'assist-' + Date.now(),
-          role: 'assistant',
-          content: assistantText,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, finalAssistantMsg]);
-
-        // Background persistence - Atomically
-        const batch = [
-          addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
-            role: 'user',
-            content: userMessage,
-            timestamp: serverTimestamp(),
-            userId: user.uid
-          }),
-          addDoc(collection(db, 'conversations', currentConvId, 'messages'), {
+        try {
+          const finalMsg = {
             role: 'assistant',
             content: assistantText,
-            timestamp: serverTimestamp(),
+            timestamp: new Date(), // Use JS Date
             userId: user.uid
-          }),
-          updateDoc(doc(db, 'conversations', currentConvId), {
-            lastUpdatedAt: serverTimestamp()
-          })
-        ];
-        
-        Promise.all(batch).catch(e => console.warn("Persistence lag:", e));
+          };
+          
+          await Promise.all([
+            addDoc(msgColl, finalMsg),
+            updateDoc(doc(db, 'conversations', currentConvId), {
+              lastUpdatedAt: serverTimestamp()
+            })
+          ]);
+        } catch (e) {
+          console.error("History sync failure (assistant):", e);
+        }
       }
 
     } catch (error: any) {
       if (error.name === 'AbortError') return;
       console.error("Chat Error:", error);
+      
       setMessages(prev => [...prev, {
         id: 'err-' + Date.now(),
         role: 'assistant',
-        content: `**System Error:** ${error.message || "Connection lost"}`,
+        content: `**Core System Failure:** ${error.message || "The neural link was severed unexpectedly."}`,
         timestamp: new Date()
       }]);
     } finally {
@@ -582,11 +635,11 @@ export default function App() {
 
       {/* Modern Sidebar */}
       <aside className={cn(
-        "fixed lg:static inset-y-0 left-0 w-60 sidebar-glass z-50 shrink-0 flex flex-col transition-transform duration-300 transform lg:translate-x-0 outline-none",
+        "fixed lg:static inset-y-0 left-0 w-64 sidebar-glass z-50 shrink-0 flex flex-col transition-transform duration-300 transform lg:translate-x-0 outline-none",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="p-4 pb-2 flex items-center justify-between">
-          <Logo onClick={() => setSidebarOpen(false)} />
+        <div className="p-5 pb-2 flex items-center justify-between">
+          <Logo enterprise onClick={() => setSidebarOpen(false)} />
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 text-white/40 hover:text-white">
             <X className="w-4 h-4" />
           </button>
@@ -649,7 +702,12 @@ export default function App() {
                     />
                   </form>
                 ) : (
-                  <span className="text-xs font-semibold truncate tracking-tight">{conv.title}</span>
+                  <div className="flex flex-col overflow-hidden">
+                    <span className="text-xs font-semibold truncate tracking-tight">{conv.title}</span>
+                    <span className="text-[7px] font-bold text-white/20 uppercase tracking-tighter">
+                      {formatDistance(conv.lastUpdatedAt instanceof Date ? conv.lastUpdatedAt : (conv.lastUpdatedAt as any)?.toDate?.() || new Date())}
+                    </span>
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
@@ -742,9 +800,12 @@ export default function App() {
                   "w-2 h-2 rounded-full animate-pulse shadow-lg",
                   configStatus.hasKey ? "bg-emerald-500 shadow-emerald-500/50" : "bg-red-500 shadow-red-500/50"
                 )} />
-                <p className="text-[10px] font-bold text-white tracking-[0.2em] uppercase">
-                  {configStatus.hasKey ? "Synthesis Engine: Online" : "Synthesis Engine: Error"}
-                </p>
+                <div className="flex flex-col">
+                  <p className="text-[9px] font-bold text-white tracking-[0.2em] uppercase">
+                    {configStatus.hasKey ? "Intelligence Active" : "Synthesis Error"}
+                  </p>
+                  <p className="text-[7px] font-black text-indigo-400/60 uppercase tracking-[0.3em]">Active Engine: Groq Llama 3.3</p>
+                </div>
               </div>
             </div>
 
@@ -769,26 +830,31 @@ export default function App() {
               ref={scrollRef}
               className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 md:px-10 md:py-8 space-y-6 scrollbar-hide"
             >
-              {messages.length === 0 && !streamingContent && !isLoading ? (
+            {messages.length === 0 && !streamingContent && !isLoading ? (
                 <div className="h-full flex flex-col items-center justify-center max-w-xl mx-auto space-y-6 text-center py-6">
                    <div className="w-12 h-12 rounded-[1.2rem] bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center relative group">
                       <Sparkles className="w-6 h-6 text-indigo-400 group-hover:scale-125 transition-transform duration-700" />
                       <div className="absolute inset-0 bg-indigo-400/10 blur-xl rounded-full opacity-50" />
                    </div>
-                   <div className="space-y-2">
-                      <h2 className="text-xl sm:text-2xl font-display font-bold text-white tracking-tight italic">How can I assist <br /> your <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">Intelligence</span> today?</h2>
-                      <p className="text-white/30 text-[10px] font-medium tracking-wide">Select a query below or initiate a new synthesis session.</p>
+                   <div className="space-y-4">
+                      <h2 className="text-2xl sm:text-4xl font-display font-medium text-white tracking-tighter leading-tight">
+                        How can MANI AI <br /> 
+                        <span className="text-indigo-400 italic font-black">Synthesize</span> your <br />
+                        Intelligence today?
+                      </h2>
+                      <div className="h-px w-12 bg-indigo-500/30 mx-auto" />
+                      <p className="text-white/20 text-[10px] font-bold uppercase tracking-[0.3em]">Neural Protocol 3.5 Active</p>
                    </div>
-                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full mt-4">
                       <SuggestionCard 
-                        title="Quantum Analysis" 
-                        description="Synthesize topological data outcomes" 
-                        onClick={() => setInput("Synthesize topological data outcomes...")}
+                        title="Market Synthesis" 
+                        description="Analyze volatile indicators and trend velocity" 
+                        onClick={() => setInput("Perform a comprehensive market synthesis on the current technology sector trends...")}
                       />
                       <SuggestionCard 
-                        title="Strategic Audit" 
-                        description="Audit neural architecture for bottlenecks" 
-                        onClick={() => setInput("Perform strategic neural audit...")}
+                        title="Neural Audit" 
+                        description="Recursive check for architectural bottlenecks" 
+                        onClick={() => setInput("Analyze this neural architecture for potential scalability bottlenecks...")}
                       />
                    </div>
                 </div>
