@@ -1,11 +1,19 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { initializeApp } from "firebase/app";
+import { getFirestore, initializeFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getStorage } from "firebase/storage";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCI7g8CglADWz3RHzlI8sBknnKqDjJdoqo",
+  authDomain: "oldproject-rebuild-purple.firebaseapp.com",
+  projectId: "oldproject-rebuild-purple",
+  storageBucket: "oldproject-rebuild-purple.firebasestorage.app",
+  messagingSenderId: "511322412609",
+  appId: "1:511322412609:web:f78ffcdff3a3cc22ea58c0"
+};
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(app, { experimentalForceLongPolling: true });
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();

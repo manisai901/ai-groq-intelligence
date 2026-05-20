@@ -53,10 +53,16 @@ export function MessageBubble({ message }: { message: Message }) {
                </div>
             </div>
           )}
-          <div className="prose prose-sm prose-invert prose-indigo max-w-none text-white/90">
+          <div className="prose prose-invert prose-indigo max-w-none text-white/90 text-base md:text-lg">
             <div className="markdown-body">
               <ReactMarkdown
                 components={{
+                  p({ children, ...props }: any) {
+                    return <div className="mb-4 last:mb-0" {...props}>{children}</div>;
+                  },
+                  pre({ children, ...props }: any) {
+                    return <div className="not-prose" {...props}>{children}</div>;
+                  },
                   code({ node, inline, className, children, ...props }: any) {
                     return !inline ? (
                       <CodeBlock className={className} {...props}>{children}</CodeBlock>

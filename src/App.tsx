@@ -94,6 +94,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -137,11 +138,13 @@ export default function App() {
       
       const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef).catch(err => {
-        handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
+        console.error("Firestore getDoc error (likely database not created yet):", err);
         return null;
       });
 
-      if (userSnap && !userSnap.exists()) {
+      if (userSnap === null) {
+        alert("Authentication succeeded, but Firestore seems to be unreachable. Please ensure you have created the Firestore Database in your Firebase Console for project 'oldproject-rebuild-purple'.");
+      } else if (!userSnap.exists()) {
         await setDoc(userRef, {
           uid: user.uid,
           email: user.email,
@@ -175,9 +178,37 @@ export default function App() {
   }, [messages, streamingContent, isLoading]);
 
   // Fetch conversations for current user
-  const loadingConversations = false;
-  const convError = null;
-  const conversations: Conversation[] = [];
+  const [conversationsSnapshot, loadingConversations, convError] = useCollection(
+    user ? query(
+      collection(db, 'conversations'),
+      where('userId', '==', user.uid)
+    ) : null
+  );
+
+  if (convError) {
+    console.error("Conversations fetch error:", convError);
+  }
+
+  const conversations = useMemo(() => {
+    return conversationsSnapshot?.docs.map(doc => {
+      const data = doc.data({ serverTimestamps: 'estimate' });
+      let lastUpdate: Date;
+      if (data.lastUpdatedAt && typeof data.lastUpdatedAt.toDate === 'function') {
+        lastUpdate = data.lastUpdatedAt.toDate();
+      } else {
+        lastUpdate = new Date(data.lastUpdatedAt || Date.now());
+      }
+      return {
+        id: doc.id,
+        ...data,
+        lastUpdatedAt: lastUpdate
+      } as Conversation;
+    }).sort((a, b) => {
+      const t1 = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : 0;
+      const t2 = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : 0;
+      return t2 - t1;
+    }) || [];
+  }, [conversationsSnapshot]);
 
   const formatDistance = (date: Date) => {
     const now = new Date();
@@ -278,6 +309,36 @@ export default function App() {
       if (!activeConversationId) setMessages([]);
       return;
     }
+
+    const q = query(
+      collection(db, 'conversations', activeConversationId, 'messages'),
+      orderBy('timestamp', 'asc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => {
+        const data = doc.data({ serverTimestamps: 'estimate' });
+        let ts = new Date();
+        if (data.timestamp) {
+          if (typeof data.timestamp.toDate === 'function') {
+            ts = data.timestamp.toDate();
+          } else if (data.timestamp instanceof Date) {
+            ts = data.timestamp;
+          }
+        }
+        return {
+          id: doc.id,
+          ...data,
+          timestamp: ts
+        } as Message;
+      });
+      
+      setMessages(msgs);
+    }, (error) => {
+      console.error("Messages Subscription Error:", error);
+    });
+
+    return () => unsubscribe();
   }, [activeConversationId, user]);
 
   const startNewConversation = useCallback(async () => {
@@ -286,8 +347,22 @@ export default function App() {
     setSidebarOpen(false);
   }, []);
 
-  const deleteConversation = async (e: React.MouseEvent, id: string) => {
+  const requestDeleteConversation = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteConversation = async (id: string) => {
+    setDeleteConfirmId(null);
+    try {
+      await deleteDoc(doc(db, 'conversations', id));
+      if (activeConversationId === id) {
+        setActiveConversationId(null);
+        setMessages([]);
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `conversations/${id}`);
+    }
   };
 
   const renameConversation = async (e: React.FormEvent, id: string) => {
@@ -296,7 +371,15 @@ export default function App() {
       setEditingId(null);
       return;
     }
-    setEditingId(null);
+    try {
+      await updateDoc(doc(db, 'conversations', id), {
+        title: editTitle.trim(),
+        lastUpdatedAt: serverTimestamp()
+      });
+      setEditingId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `conversations/${id}`);
+    }
   };
 
   // Helper to handle speech
@@ -342,16 +425,20 @@ export default function App() {
       await uploadBytes(fileRef, file);
       const url = await getDownloadURL(fileRef);
 
-      const newFileMsg: Message = {
+      const msgColl = collection(db, 'conversations', activeConversationId, 'messages');
+      await addDoc(msgColl, {
         role: 'user',
         content: `Uploaded file: ${file.name}`,
         fileUrl: url,
         fileName: file.name,
-        timestamp: new Date(),
-        id: 'msg-' + Date.now()
-      };
-      
-      setMessages(prev => [...prev, newFileMsg]);
+        timestamp: serverTimestamp(),
+        userId: user.uid
+      });
+
+      await updateDoc(doc(db, 'conversations', activeConversationId), {
+        title: messages.length === 0 ? file.name.slice(0, 30) : undefined,
+        lastUpdatedAt: serverTimestamp()
+      });
 
       setIsLoading(false);
     } catch (error) {
@@ -374,21 +461,31 @@ export default function App() {
     try {
       if (!user) throw new Error("Must be logged in to chat.");
 
-      // Add local message for user
-      const newUserMsg: Message = {
+      if (!currentConvId) {
+        const newConvRef = doc(collection(db, 'conversations'));
+        currentConvId = newConvRef.id;
+        setActiveConversationId(currentConvId);
+        
+        await setDoc(newConvRef, {
+          userId: user.uid,
+          title: userMessage.slice(0, 30),
+          createdAt: serverTimestamp(),
+          lastUpdatedAt: serverTimestamp()
+        }).catch(err => console.error(err));
+      }
+
+      // Persist user message asynchronously
+      const msgColl = collection(db, 'conversations', currentConvId, 'messages');
+      addDoc(msgColl, {
         role: 'user',
         content: userMessage,
-        timestamp: new Date(),
-        id: 'msg-' + Date.now()
-      };
-      
-      setMessages(prev => [...prev, newUserMsg]);
+        timestamp: serverTimestamp(),
+        userId: user.uid
+      }).catch(err => console.error("Firestore sync err:", err));
 
-      const historyToSend = [...messages, newUserMsg];
-      
       const inputBody = JSON.stringify({
         message: userMessage,
-        history: historyToSend.slice(-15).map(m => ({ 
+        history: messages.slice(-15).map(m => ({ 
           role: m.role,
           content: m.content
         }))
@@ -470,13 +567,17 @@ export default function App() {
       setIsLoading(false);
 
       if (assistantText.trim()) {
-        const newAssistantMsg: Message = {
-          role: 'assistant',
-          content: assistantText,
-          timestamp: new Date(),
-          id: 'msg-' + Date.now()
-        };
-        setMessages(prev => [...prev, newAssistantMsg]);
+        await Promise.all([
+          addDoc(msgColl, {
+            role: 'assistant',
+            content: assistantText,
+            timestamp: serverTimestamp(),
+            userId: user.uid
+          }),
+          updateDoc(doc(db, 'conversations', currentConvId), {
+            lastUpdatedAt: serverTimestamp()
+          })
+        ]);
       }
 
     } catch (error: any) {
@@ -690,7 +791,7 @@ export default function App() {
                       <Pencil className="w-3 h-3" />
                     </button>
                     <button 
-                      onClick={(e) => deleteConversation(e, conv.id)}
+                      onClick={(e) => requestDeleteConversation(e, conv.id)}
                       className="p-1.5 hover:text-red-400 transition-all"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -711,54 +812,28 @@ export default function App() {
         </nav>
 
         {/* User Profile - Compact */}
-        <div className="p-3 mt-auto space-y-2">
-          <div 
-            onClick={() => setShowSupportMail(!showSupportMail)}
-            className="flex items-center justify-center p-2 rounded-lg bg-white/[0.02] border border-white/5 group cursor-pointer hover:bg-white/5 transition-all"
-          >
-            <div className={cn(
-              "flex items-center gap-1.5 transition-all text-white/40 group-hover:text-emerald-400",
-              showSupportMail && "text-emerald-400"
-            )}>
-              <LifeBuoy className="w-3 h-3" />
-              <AnimatePresence>
-                {showSupportMail && (
-                  <motion.div
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: 'auto' }}
-                    exit={{ opacity: 0, width: 0 }}
-                    className="overflow-hidden whitespace-nowrap"
-                  >
-                    <p className="text-[8px] font-bold tracking-tight">manikantasaivootla@gmail.com</p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+        <div className="p-3 mt-auto border-t border-white/5">
+          <div className="flex items-center gap-2 mb-2">
+             {user?.photoURL ? <img src={user.photoURL} className="w-6 h-6 rounded-md border border-white/10" alt="Profile" /> : <div className="w-6 h-6 rounded-md border border-white/10 bg-white/5" />}
+             <div className="overflow-hidden">
+                <p className="text-[9px] font-black text-white truncate max-w-[100px]">{user?.displayName || "Guest Agent"}</p>
+             </div>
           </div>
-
-          <div className="p-2.5 glass-premium rounded-xl border border-white/5 space-y-2 relative overflow-hidden group">
-            <div className="flex items-center gap-2">
-               {user?.photoURL ? <img src={user.photoURL} className="w-6 h-6 rounded-md border border-white/10" alt="Profile" /> : <div className="w-6 h-6 rounded-md border border-white/10 bg-white/5" />}
-               <div className="overflow-hidden">
-                  <p className="text-[9px] font-black text-white truncate max-w-[100px]">{user?.displayName || "Guest Agent"}</p>
-               </div>
-            </div>
-            {user ? (
-              <button 
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-1.5 p-1.5 rounded-lg bg-white/[0.02] border border-white/5 text-[8px] font-bold uppercase tracking-widest text-white/30 hover:text-white hover:bg-red-500/10 transition-all group/logout"
-              >
-                <LogOut className="w-2.5 h-2.5 group-hover/logout:text-red-400" /> Sign Out
-              </button>
-            ) : (
-              <button 
-                onClick={handleLogin}
-                className="w-full flex items-center justify-center gap-1.5 p-1.5 rounded-lg bg-white/[0.02] border border-white/5 text-[8px] font-bold uppercase tracking-widest text-white/30 hover:text-white hover:bg-indigo-500/10 transition-all group/logout"
-              >
-                <Mail className="w-2.5 h-2.5 group-hover/logout:text-indigo-400" /> Sign In
-              </button>
-            )}
-          </div>
+          {user ? (
+            <button 
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-1.5 p-1.5 rounded-lg bg-white/[0.02] border border-white/5 text-[8px] font-bold uppercase tracking-widest text-white/30 hover:text-white hover:bg-red-500/10 transition-all group/logout"
+            >
+              <LogOut className="w-2.5 h-2.5 group-hover/logout:text-red-400" /> Sign Out
+            </button>
+          ) : (
+            <button 
+              onClick={handleLogin}
+              className="w-full flex items-center justify-center gap-1.5 p-1.5 rounded-lg bg-white/[0.02] border border-white/5 text-[8px] font-bold uppercase tracking-widest text-white/30 hover:text-white hover:bg-indigo-500/10 transition-all group/logout"
+            >
+              <Mail className="w-2.5 h-2.5 group-hover/logout:text-indigo-400" /> Sign In
+            </button>
+          )}
         </div>
       </aside>
 
@@ -774,18 +849,6 @@ export default function App() {
               >
                 <Menu className="w-6 h-6" />
               </button>
-              <div className="hidden sm:flex items-center gap-3">
-                <div className={cn(
-                  "w-2 h-2 rounded-full animate-pulse shadow-lg",
-                  configStatus.hasKey ? "bg-emerald-500 shadow-emerald-500/50" : "bg-red-500 shadow-red-500/50"
-                )} />
-                <div className="flex flex-col">
-                  <p className="text-[9px] font-bold text-white tracking-[0.2em] uppercase">
-                    {configStatus.hasKey ? "Intelligence Active" : "Synthesis Error"}
-                  </p>
-                  <p className="text-[7px] font-black text-indigo-400/60 uppercase tracking-[0.3em]">Active Engine: Groq Llama 3.3</p>
-                </div>
-              </div>
             </div>
 
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -795,10 +858,6 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3 sm:gap-6 z-10">
-                <div className="hidden xs:flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-[9px] font-bold text-indigo-400 uppercase tracking-widest">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Secure Session</span>
-                </div>
                 <Logo hideVersion />
             </div>
           </header>
@@ -807,7 +866,8 @@ export default function App() {
           <div className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
             <div 
               ref={scrollRef}
-              className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 md:px-10 md:py-8 space-y-6 scrollbar-hide"
+              className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 md:px-10 md:py-8 space-y-6 scrollbar-hide border"
+              style={{ borderColor: '#b64242', backgroundColor: '#5a3030' }}
             >
             {messages.length === 0 && !streamingContent && !isLoading ? (
                 <div className="h-full flex flex-col items-center justify-center max-w-xl mx-auto space-y-6 text-center py-6">
@@ -892,6 +952,36 @@ export default function App() {
           </div>
         </div>
       </main>
+      
+      <AnimatePresence>
+        {deleteConfirmId && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="glass p-6 rounded-2xl border border-white/10 max-w-sm w-full space-y-4 shadow-2xl"
+            >
+              <h3 className="text-lg font-bold text-white">Delete Chat Thread?</h3>
+              <p className="text-white/60 text-sm">This action cannot be undone and will permanently remove this conversation history.</p>
+              <div className="flex items-center gap-3 pt-4">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => confirmDeleteConversation(deleteConfirmId)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-500 text-sm font-medium transition-colors border border-red-500/30"
+                >
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

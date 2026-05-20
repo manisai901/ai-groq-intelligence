@@ -16,7 +16,7 @@ export function Logo({ hideVersion = false, onClick, enterprise = false }: { hid
         <div className="absolute -inset-1 bg-indigo-500/20 rounded-xl blur-md opacity-0 group-hover:opacity-100 transition-all duration-1000 group-hover:animate-pulse" />
       </div>
       <div className="flex flex-col">
-        <span className="font-display text-base font-black tracking-tighter text-white italic leading-none flex items-center gap-2">
+        <span className="font-display text-base font-black tracking-tighter text-white italic leading-none flex items-center gap-2" style={{ fontFamily: 'Arial' }}>
           MANI AI
           {enterprise && <span className="text-[7px] not-italic font-black bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20 tracking-widest uppercase">Enterprise</span>}
         </span>
