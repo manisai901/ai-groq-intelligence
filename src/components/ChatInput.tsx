@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Paperclip, Mic, MicOff, Send, X, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Send, X, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface ChatInputProps {
@@ -9,7 +9,6 @@ interface ChatInputProps {
   isListening: boolean;
   toggleListening: () => void;
   handleSubmit: (e: React.FormEvent) => void;
-  handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleClearInput: () => void;
   charLimit?: number;
 }
@@ -21,11 +20,9 @@ export function ChatInput({
   isListening,
   toggleListening,
   handleSubmit,
-  handleFileUpload,
   handleClearInput,
   charLimit = 1000
 }: ChatInputProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const isOverLimit = input.length > charLimit;
 
   return (
@@ -36,15 +33,6 @@ export function ChatInput({
           onSubmit={handleSubmit} 
           className="relative flex items-center gap-2 bg-[#0a0a0b]/90 border border-white/10 rounded-lg sm:rounded-xl p-1 sm:p-1.5 focus-within:border-indigo-500/40 transition-all shadow-2xl"
         >
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white/[0.03] hover:bg-white/10 border border-white/[0.05] items-center justify-center transition-all group/paper"
-          >
-            <Paperclip className="w-4 h-4 opacity-40 group-hover/paper:opacity-100 group-hover/paper:text-indigo-400 transition-all" />
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
-          </button>
-          
           <div className="flex-1 relative flex items-center min-w-0">
             <textarea
               value={input}
@@ -90,7 +78,7 @@ export function ChatInput({
               type="button"
               onClick={toggleListening}
               className={cn(
-                "hidden xs:flex p-2.5 rounded-xl transition-all duration-300",
+                "flex p-2 sm:p-2.5 rounded-xl transition-all duration-300",
                 isListening 
                   ? "bg-red-500/20 text-red-400 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.3)]" 
                   : "text-white/20 hover:text-indigo-400 hover:bg-white/5"

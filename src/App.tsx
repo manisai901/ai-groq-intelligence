@@ -20,7 +20,9 @@ import {
   LifeBuoy,
   Loader2,
   Search,
-  Bot
+  Bot,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { 
@@ -102,9 +104,18 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   
   const [showSupportMail, setShowSupportMail] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(false);
   const [streamingContent, setStreamingContent] = useState<{ id: string, content: string } | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [configStatus, setConfigStatus] = useState<{ hasKey: boolean, checked: boolean }>({ hasKey: false, checked: false });
+
+  useEffect(() => {
+    if (isLightMode) {
+      document.body.classList.add('light-theme');
+    } else {
+      document.body.classList.remove('light-theme');
+    }
+  }, [isLightMode]);
 
   // Stream reader ref to allow cleanup
   const activeReaderRef = useRef<ReadableStreamDefaultReader | null>(null);
@@ -413,39 +424,6 @@ export default function App() {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-
-    try {
-      setIsLoading(true);
-      
-      const fileRef = ref(storage, `uploads/${user.uid}/${Date.now()}_${file.name}`);
-      await uploadBytes(fileRef, file);
-      const url = await getDownloadURL(fileRef);
-
-      const msgColl = collection(db, 'conversations', activeConversationId, 'messages');
-      await addDoc(msgColl, {
-        role: 'user',
-        content: `Uploaded file: ${file.name}`,
-        fileUrl: url,
-        fileName: file.name,
-        timestamp: serverTimestamp(),
-        userId: user.uid
-      });
-
-      await updateDoc(doc(db, 'conversations', activeConversationId), {
-        title: messages.length === 0 ? file.name.slice(0, 30) : undefined,
-        lastUpdatedAt: serverTimestamp()
-      });
-
-      setIsLoading(false);
-    } catch (error) {
-      console.error("Upload failed", error);
-      setIsLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -812,7 +790,31 @@ export default function App() {
         </nav>
 
         {/* User Profile - Compact */}
-        <div className="p-3 mt-auto border-t border-white/5">
+        <div className="p-3 mt-auto border-t border-white/5 space-y-2">
+          <div 
+            onClick={() => setShowSupportMail(!showSupportMail)}
+            className="flex items-center justify-center p-2 rounded-lg bg-white/[0.02] border border-white/5 group cursor-pointer hover:bg-white/5 transition-all"
+          >
+            <div className={cn(
+              "flex items-center gap-1.5 transition-all text-white/40 group-hover:text-emerald-400",
+              showSupportMail && "text-emerald-400"
+            )}>
+              <LifeBuoy className="w-3 h-3" />
+              <AnimatePresence>
+                {showSupportMail && (
+                  <motion.div
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    className="overflow-hidden whitespace-nowrap"
+                  >
+                    <p className="text-[8px] font-bold tracking-tight">manikantasaivootla@gmail.com</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2 mb-2">
              {user?.photoURL ? <img src={user.photoURL} className="w-6 h-6 rounded-md border border-white/10" alt="Profile" /> : <div className="w-6 h-6 rounded-md border border-white/10 bg-white/5" />}
              <div className="overflow-hidden">
@@ -858,6 +860,13 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3 sm:gap-6 z-10">
+                <button
+                  onClick={() => setIsLightMode(!isLightMode)}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-all border border-transparent hover:border-white/10"
+                  title="Toggle Display Mode"
+                >
+                  {isLightMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                </button>
                 <Logo hideVersion />
             </div>
           </header>
@@ -946,7 +955,6 @@ export default function App() {
               isListening={isListening}
               toggleListening={toggleListening}
               handleSubmit={handleSubmit}
-              handleFileUpload={handleFileUpload}
               handleClearInput={handleClearInput}
             />
           </div>

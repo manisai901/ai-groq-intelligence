@@ -29,3 +29,12 @@
   @apply bg-[#050505]/95 border-r border-white/[0.03];
 }
 
+body.light-theme {
+  filter: invert(1) hue-rotate(180deg);
+  /* The body background is #030303, inverted becomes #fcfcfc */
+}
+
+body.light-theme img,
+body.light-theme video {
+  filter: invert(1) hue-rotate(180deg);
+}

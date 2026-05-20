@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
-import { User, Sparkles, FileText, Check, Copy } from 'lucide-react';
+import { User, Sparkles, FileText, Check, Copy, Volume2, Square } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Timestamp } from 'firebase/firestore';
 
@@ -16,6 +16,34 @@ interface Message {
 
 export function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user';
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (isSpeaking) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [isSpeaking]);
+
+  const handleTTS = () => {
+    if ('speechSynthesis' in window) {
+      if (isSpeaking) {
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+      } else {
+        window.speechSynthesis.cancel(); // Cancel any other speech
+        const cleanText = message.content.replace(/[*_#`~>]/g, '');
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+        window.speechSynthesis.speak(utterance);
+        setIsSpeaking(true);
+      }
+    } else {
+      alert("Text-to-speech is not supported in this browser.");
+    }
+  };
   
   return (
     <motion.div 
@@ -34,6 +62,15 @@ export function MessageBubble({ message }: { message: Message }) {
            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30">
              {isUser ? 'Human Subject' : 'Neural Core'}
            </span>
+           {!isUser && (
+              <button 
+                onClick={handleTTS}
+                className="ml-1 p-1 text-white/40 hover:text-white transition-colors bg-white/[0.02] hover:bg-white/[0.08] rounded border border-white/5"
+                title={isSpeaking ? "Stop speaking" : "Listen to response"}
+              >
+                {isSpeaking ? <Square className="w-3 h-3 text-red-400" /> : <Volume2 className="w-3 h-3 text-indigo-300" />}
+              </button>
+           )}
         </div>
 
         <div className={cn(
